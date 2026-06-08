@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dap"
+version = "0.1.0"
+description = "Executable core of the paper 'dynamic algebra potentials': adaptive arrangements compiled to discrete dynamical systems."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "David I. Spivak" }]
+dependencies = ["jax>=0.4", "numpy>=1.24"]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[tool.setuptools.packages.find]
+include = ["dap*"]
