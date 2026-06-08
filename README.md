@@ -53,8 +53,26 @@ saying how an incoming covector updates the stored state.
 
 ## Reproduce this yourself
 
-This implementation was generated from the paper's definitions by an LLM (Claude).
-To regenerate it from scratch, the recipe is roughly:
+This repository *is* the result of pointing a language model (Claude) at the
+paper and asking it to implement the constructions — no human wrote the code. To
+make your own version (which you can then modify), give an LLM the paper and a
+prompt like:
+
+> Read this paper. Implement the constructions of the chapters "Smooth adaptive
+> arrangements" and "Smooth adaptive dynamics" as runnable Python. Represent a
+> morphism of polynomials as a pair of programs — a forward map on positions and
+> a backward map on directions — and implement the cotangent functor with its
+> backward part as reverse-mode automatic differentiation. Realize every natural
+> transformation, monoidal productor/unitor, and the lens internalization as such
+> a (forward, backward) pair, and compose them into the dynamics functor; carry
+> coalgebras in Moore form (a state plus a step function), never materializing the
+> internal hom. Provide two integrators — configuration (descent) and phase
+> (Hamiltonian). Then build the worked examples — Newton's method, gradient
+> descent with backpropagation, the wave equation, the heat equation — and check
+> that each reproduces the paper's recurrences. Use ℝᵈ for manifolds, store
+> covector fields as affine (A, b) pairs, and use JAX for autodiff.
+
+Spelled out, the recipe is:
 
 1. Read the syntax and semantics chapters (`ch.smooth_rwd`, `ch.smooth_dynamics`).
 2. Represent a polynomial map as a pair `(forward_on_positions, backward_on_directions)`.
