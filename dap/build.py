@@ -55,10 +55,19 @@ def ask(prompt, default=None, parse=str, choices=None):
         return val
 
 
-def _initial(K, kind):
-    if kind == "zeros":
+def _initial(K, spec):
+    if spec == "zeros":
         return jnp.zeros(K)
-    return jnp.asarray(np.random.default_rng(0).standard_normal(K))
+    seed = None if spec == "random" else int(spec)  # integer spec => reproducible draw
+    return jnp.asarray(np.random.default_rng(seed).standard_normal(K))
+
+
+def parse_init(spec):
+    """'random' (fresh each run), 'zeros', or an integer seed (reproducible)."""
+    spec = spec.strip().lower()
+    if spec not in ("random", "zeros"):
+        int(spec)  # validate as a seed; raises -> ask() re-prompts
+    return spec
 
 
 def _laplacian_pinned(v):
@@ -246,8 +255,8 @@ def main():
             K = ask("K particles", 7, int)
             m = ask("mass m", 1.0, float)
             kappa = ask("spring kappa", 0.9 if dynamics == "phase" else 0.2, float)
-            init = ask("initial displacement (random/zeros)", "random",
-                       parse=str.lower, choices={"random", "zeros"})
+            init = ask("initial displacement (random / zeros / seed int)", "random",
+                       parse=parse_init)
             steps = ask("steps", 20, int)
             run_chain(dynamics, K, m, kappa, init, steps)
         elif system == 2:
@@ -255,8 +264,8 @@ def main():
                            "ring 6", parse=parse_graph)
             m = ask("mass m", 1.0, float)
             kappa = ask("spring kappa", 0.5 if dynamics == "phase" else 0.15, float)
-            init = ask("initial displacement (random/zeros)", "random",
-                       parse=str.lower, choices={"random", "zeros"})
+            init = ask("initial displacement (random / zeros / seed int)", "random",
+                       parse=parse_init)
             steps = ask("steps", 12, int)
             run_graph(dynamics, V, edges, m, kappa, init, steps)
         else:
