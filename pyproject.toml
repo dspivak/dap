@@ -15,5 +15,9 @@ dependencies = ["jax>=0.4", "numpy>=1.24"]
 [project.optional-dependencies]
 test = ["pytest>=7"]
 
+[project.scripts]
+dap = "dap.build:main"
+dap-demo = "dap.demo:main"
+
 [tool.setuptools.packages.find]
 include = ["dap*"]

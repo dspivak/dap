@@ -20,12 +20,13 @@ git clone git@github.com:dspivak/dap.git && cd dap
 python -m venv .venv && . .venv/bin/activate
 pip install -e .
 
-python -m dap.demo      # run the worked examples
-python -m dap.build     # build & run your OWN arrangement (interactive)
-pytest dap/tests        # the test suite
+dap            # build & run your OWN arrangement (interactive)
+dap-demo       # run the worked examples
+pytest dap/tests
 ```
 
-Requires Python ≥ 3.10; pulls in JAX and NumPy.
+After `pip install -e .` the `dap` and `dap-demo` commands are on your PATH (no
+`python -m …`). Requires Python ≥ 3.10; pulls in JAX and NumPy.
 
 ## What's here
 
@@ -69,17 +70,15 @@ prompt like:
 > a (forward, backward) pair, and compose them into the dynamics functor; carry
 > coalgebras in Moore form (a state plus a step function), never materializing the
 > internal hom. Provide two integrators — configuration (descent) and phase
-> (Hamiltonian). For a symplectic integrator like leapfrog (velocity Verlet),
-> which evaluates the force twice per step, first build the general multi-stage
-> target org^(K): a [p,q]^{∘K}-coalgebra is K emit/receive rounds per tick, where
-> each round but the last lands in an inner (K−1)-stage coalgebra (the
-> substitution [p,q]^{∘K}), and give it composition (parallel, then_static); then
-> obtain leapfrog as ONE org^(2) instance via a two-stage integrator — do not
-> hardcode it as a bespoke stepper. Then build the worked examples — Newton's
-> method, gradient descent with backpropagation, the wave equation (with its
-> stable leapfrog version), the heat equation — and check that each reproduces the
-> paper's recurrences. Use ℝᵈ for manifolds, store covector fields as affine
-> (A, b) pairs, and use JAX for autodiff.
+> (Hamiltonian). Also build the multi-stage semantics org^(K): a [p,q]^{∘K}-
+> coalgebra is K emit/receive rounds per macro-tick, where each round but the last
+> lands in an inner (K−1)-stage coalgebra (the substitution [p,q] ◁ ⋯ ◁ [p,q]),
+> with composition (parallel, then_static). A two-stage integrator then gives
+> leapfrog (velocity Verlet) as one org^(2) instance — derived from org^(2), not
+> hardcoded. Then build the worked examples — Newton's method, gradient descent
+> with backpropagation, the wave equation (Euler and stable leapfrog), the heat
+> equation — and check that each reproduces the paper's recurrences. Use ℝᵈ for
+> manifolds, store covector fields as affine (A, b) pairs, and use JAX for autodiff.
 
 Spelled out, the recipe is:
 
@@ -94,10 +93,10 @@ Spelled out, the recipe is:
    materialize the internal hom.
 6. Pick an **integrator** — a state space plus an update from an incoming covector
    — configuration or phase.
-7. For symplectic / multi-stage schemes (leapfrog), build the **general `org^(K)`**
-   (K emit/receive rounds per tick; the substitution `[p,q]^{∘K}`, each round but
-   the last landing in an inner `(K−1)`-stage coalgebra) **with composition**, and
-   derive leapfrog as a **two-stage instance** — not a hardcoded stepper.
+7. Build the multi-stage semantics **`org^(K)`** (K emit/receive rounds; the
+   substitution `[p,q]^{∘K}`, each round but the last landing in an inner
+   `(K−1)`-stage coalgebra) **with composition**; leapfrog is then one two-stage
+   instance.
 8. Instantiate the worked examples and check they reproduce the paper's recurrences.
 
 Four representation choices the mathematics does not dictate, which this code
