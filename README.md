@@ -37,7 +37,8 @@ Requires Python ≥ 3.10; pulls in JAX and NumPy.
 | `interpretation.py` | the shared, integrator-free polynomial interpretation |
 | `integrator.py` | the configuration and phase integrators |
 | `functors.py` | `Phiconf`, `Phiphase` |
-| `leapfrog.py` | leapfrog as an `org^(2)` coalgebra (stable wave) |
+| `org2.py` | general two-stage coalgebras `[p,q]^{∘2}` (`org^(2)`) + composition |
+| `leapfrog.py` | leapfrog as one `org^(2)` instance (stable wave) |
 | `wiring.py` | compose boxes (chains, graphs, tensor) |
 | `learning.py` | gradient descent with backpropagation |
 | `demo.py`, `build.py` | run the examples / build your own |
@@ -68,10 +69,17 @@ prompt like:
 > a (forward, backward) pair, and compose them into the dynamics functor; carry
 > coalgebras in Moore form (a state plus a step function), never materializing the
 > internal hom. Provide two integrators — configuration (descent) and phase
-> (Hamiltonian). Then build the worked examples — Newton's method, gradient
-> descent with backpropagation, the wave equation, the heat equation — and check
-> that each reproduces the paper's recurrences. Use ℝᵈ for manifolds, store
-> covector fields as affine (A, b) pairs, and use JAX for autodiff.
+> (Hamiltonian). For a symplectic integrator like leapfrog (velocity Verlet),
+> which evaluates the force twice per step, first build the general multi-stage
+> target org^(K): a [p,q]^{∘K}-coalgebra is K emit/receive rounds per tick, where
+> each round but the last lands in an inner (K−1)-stage coalgebra (the
+> substitution [p,q]^{∘K}), and give it composition (parallel, then_static); then
+> obtain leapfrog as ONE org^(2) instance via a two-stage integrator — do not
+> hardcode it as a bespoke stepper. Then build the worked examples — Newton's
+> method, gradient descent with backpropagation, the wave equation (with its
+> stable leapfrog version), the heat equation — and check that each reproduces the
+> paper's recurrences. Use ℝᵈ for manifolds, store covector fields as affine
+> (A, b) pairs, and use JAX for autodiff.
 
 Spelled out, the recipe is:
 
@@ -86,7 +94,11 @@ Spelled out, the recipe is:
    materialize the internal hom.
 6. Pick an **integrator** — a state space plus an update from an incoming covector
    — configuration or phase.
-7. Instantiate the worked examples and check they reproduce the paper's recurrences.
+7. For symplectic / multi-stage schemes (leapfrog), build the **general `org^(K)`**
+   (K emit/receive rounds per tick; the substitution `[p,q]^{∘K}`, each round but
+   the last landing in an inner `(K−1)`-stage coalgebra) **with composition**, and
+   derive leapfrog as a **two-stage instance** — not a hardcoded stepper.
+8. Instantiate the worked examples and check they reproduce the paper's recurrences.
 
 Four representation choices the mathematics does not dictate, which this code
 makes explicit: manifolds = ℝᵈ; covector fields stored as affine `(A, b)` pairs;
@@ -98,10 +110,13 @@ coalgebras in Moore form; autodiff backend = JAX.
 flow: stable for small steps, a genuine algorithm. `Phiphase` (wave) is explicit
 Euler on a *Hamiltonian* flow: the recurrence is exact, but as a time-stepper it
 is not symplectic, so the energy grows — `python -m dap.build` shows this
-directly. For a *stable* wave, choose `leapfrog`: the symplectic, two-stage
-velocity-Verlet integrator (`leapfrog.py`), which realizes the K=2 case of the
-paper's `org^(K)` (rmk.org_N) — two force evaluations per macro-tick, so it lands
-in `org^(2)` rather than `org`. Same diagram, bounded energy.
+directly. For a *stable* wave, choose `leapfrog` — symplectic velocity Verlet,
+which evaluates the force twice per step, so it lands in `org^(2)` rather than
+`org`. `org2.py` builds the general two-stage coalgebra `[p,q]^{∘2}` with
+composition; `leapfrog.py` is one instance of it. Same diagram, bounded energy.
+(The general *functor* `sarr → org^(K)` of rmk.org_N is still a conjecture; the
+code provides the datatype, a leapfrog instance, and composition — tested, not a
+proof.)
 
 ## License
 

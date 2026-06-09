@@ -18,7 +18,8 @@ from .integrator import (
 )
 from .interpretation import smooth_interpretation
 from .functors import Phi, Phiconf, Phiphase, cot_object, cot_map
-from .leapfrog import OrgMorphism2, Phileap
+from .org2 import OrgMorphism2
+from .leapfrog import Phileap
 from . import functors
 from . import wiring
 from . import learning
