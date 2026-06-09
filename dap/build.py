@@ -153,8 +153,29 @@ def parse_graph(spec):
 
 def run_chain(dynamics, K, m, kappa, init_kind, steps):
     arr = compose_chain([harmonic_particle(m, kappa)] * K)
-    O = Phiphase(arr) if dynamics == "phase" else Phiconf(arr)
     q0 = _initial(K, init_kind)
+
+    if dynamics == "leapfrog":
+        from .leapfrog import Phileap
+        O = Phileap(arr)
+        state = (q0, jnp.zeros(K))
+        print(f"\nbuilt  wire_{K}(Part,...,Part) : I -> box,  Phileap (org^(2)),  state = T*R^{K}")
+        bdy = lambda op: (kappa * op[0], jnp.array([0.0]))  # pinned ends, from emitted q_K
+        traj = [np.asarray(q0)]
+        for _ in range(steps):
+            _, _, state = O.with_state(state).run_one(_IN_POS_CLOSED, bdy)
+            traj.append(np.asarray(state[0]))
+        a = np.stack(traj)
+        peaks = np.abs(a).max(axis=1)
+        print(f"  q(0)   = {_vec(a[0])}")
+        print(f"  q({steps:>3}) = {_vec(a[-1])}")
+        res = max((float(np.abs(m * (a[t + 2] - 2 * a[t + 1] + a[t]) - kappa * _laplacian_pinned(a[t + 1])).max())
+                   for t in range(len(a) - 2)), default=0.0)
+        print(f"  centered WAVE recurrence  m*q'' = kappa*Lap(center) :  residual {res:.1e}")
+        print(f"  peak |q|: {peaks[0]:.2f} -> {peaks.max():.2f}  (bounded -- symplectic, stays stable)")
+        return
+
+    O = Phiphase(arr) if dynamics == "phase" else Phiconf(arr)
     state = (q0, jnp.zeros(K)) if dynamics == "phase" else q0
     space = "T*R^%d" % K if dynamics == "phase" else "R^%d" % K
     print(f"\nbuilt  wire_{K}(Part,...,Part) : I -> box,  Phi{dynamics},  state = {space}")
@@ -184,13 +205,33 @@ def run_chain(dynamics, K, m, kappa, init_kind, steps):
 
 def run_graph(dynamics, V, edges, m, kappa, init_kind, steps):
     arr = harmonic_graph(V, edges, m, kappa)
-    O = Phiphase(arr) if dynamics == "phase" else Phiconf(arr)
     q0 = _initial(V, init_kind)
+    L = _graph_laplacian(V, edges)
+
+    if dynamics == "leapfrog":
+        from .leapfrog import Phileap
+        O = Phileap(arr)
+        state = (q0, jnp.zeros(V))
+        print(f"\nbuilt  {arr.label} : I -> I,  Phileap (org^(2)),  state = T*R^{V}")
+        traj = [np.asarray(q0)]
+        for _ in range(steps):
+            _, _, state = O.with_state(state).run_one(_IN_POS_CLOSED, lambda op: _IN_DIR_CLOSED)
+            traj.append(np.asarray(state[0]))
+        a = np.stack(traj)
+        peaks = np.abs(a).max(axis=1)
+        print(f"  q(0)   = {_vec(a[0])}")
+        print(f"  q({steps:>3}) = {_vec(a[-1])}")
+        res = max((float(np.abs(m * (a[t + 2] - 2 * a[t + 1] + a[t]) + kappa * (L @ a[t + 1])).max())
+                   for t in range(len(a) - 2)), default=0.0)
+        print(f"  graph WAVE (leapfrog)  m*q'' = -kappa*L q(center) :  residual {res:.1e}")
+        print(f"  peak |q|: {peaks[0]:.2f} -> {peaks.max():.2f}  (bounded -- symplectic)")
+        return
+
+    O = Phiphase(arr) if dynamics == "phase" else Phiconf(arr)
     state = (q0, jnp.zeros(V)) if dynamics == "phase" else q0
     space = "T*R^%d" % V if dynamics == "phase" else "R^%d" % V
     print(f"\nbuilt  {arr.label} : I -> I,  Phi{dynamics},  state = {space}")
 
-    L = _graph_laplacian(V, edges)
     traj = [np.asarray(q0)]
     for _ in range(steps):
         _, _, state = O.with_state(state).run_one(_IN_POS_CLOSED, lambda _o: _IN_DIR_CLOSED)
@@ -240,8 +281,8 @@ def run_gd(in_dim, out_dim, eta, ndata, steps):
 def main():
     print("dynamic-algebra-potentials: build your own arrangement\n")
     try:
-        dynamics = ask("dynamics (phase=Hamilton, conf=descent)", "phase",
-                       parse=str.lower, choices={"phase", "conf"})
+        dynamics = ask("dynamics (phase=Hamilton/Euler, conf=descent, leapfrog=stable wave)", "phase",
+                       parse=str.lower, choices={"phase", "conf", "leapfrog"})
         print("system?\n  1) chain of harmonic particles  (wave / heat)"
               "\n  2) graph of harmonic particles  (graph Laplacian)"
               "\n  3) gradient descent on a linear model  (conf)")
@@ -254,7 +295,7 @@ def main():
         if system == 1:
             K = ask("K particles", 7, int)
             m = ask("mass m", 1.0, float)
-            kappa = ask("spring kappa", 0.9 if dynamics == "phase" else 0.2, float)
+            kappa = ask("spring kappa", 0.9 if dynamics in ("phase", "leapfrog") else 0.2, float)
             init = ask("initial displacement (random / zeros / seed int)", "random",
                        parse=parse_init)
             steps = ask("steps", 20, int)
@@ -263,7 +304,7 @@ def main():
             V, edges = ask("graph ('path N' / 'ring N' / 'complete N' / 'i-j i-j ...')",
                            "ring 6", parse=parse_graph)
             m = ask("mass m", 1.0, float)
-            kappa = ask("spring kappa", 0.5 if dynamics == "phase" else 0.15, float)
+            kappa = ask("spring kappa", 0.5 if dynamics in ("phase", "leapfrog") else 0.15, float)
             init = ask("initial displacement (random / zeros / seed int)", "random",
                        parse=parse_init)
             steps = ask("steps", 12, int)

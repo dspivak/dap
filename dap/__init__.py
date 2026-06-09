@@ -18,6 +18,7 @@ from .integrator import (
 )
 from .interpretation import smooth_interpretation
 from .functors import Phi, Phiconf, Phiphase, cot_object, cot_map
+from .leapfrog import OrgMorphism2, Phileap
 from . import functors
 from . import wiring
 from . import learning
@@ -37,6 +38,8 @@ __all__ = [
     "Phi",
     "Phiconf",
     "Phiphase",
+    "Phileap",
+    "OrgMorphism2",
     "cot_object",
     "cot_map",
     "functors",

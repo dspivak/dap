@@ -95,14 +95,30 @@ def demo_heat():
     print(f"  heat (Phiconf):             peak |q| {peak0:.2f} -> {float(np.max(np.abs(np.asarray(q)))):.1e}  (dissipates to equilibrium)")
 
 
+def demo_leapfrog():
+    from dap.leapfrog import Phileap
+    K, m, kappa = 5, 1.5, 0.9
+    O = Phileap(compose_chain([_harmonic(m, kappa)] * K))
+    rng = np.random.default_rng(0)
+    state = (jnp.asarray(rng.standard_normal(K)), jnp.zeros(K))
+    peak = peak0 = float(np.max(np.abs(np.asarray(state[0]))))
+    bdy = lambda op: (kappa * op[0], jnp.array([0.0]))
+    for _ in range(400):
+        _, _, state = O.with_state(state).run_one(_IN_POS, bdy)
+        peak = max(peak, float(np.max(np.abs(np.asarray(state[0])))))
+    print(f"  wave (leapfrog, org^(2)):   peak |q| {peak0:.2f} -> max {peak:.2f} over 400 steps  (bounded -- stable)")
+
+
 def main():
     print("dynamic-algebra-potentials: worked examples\n")
     print("Phiconf -- descent dynamics:")
     demo_gradient_descent()
     demo_newton()
     demo_heat()
-    print("\nPhiphase -- Hamiltonian dynamics:")
+    print("\nPhiphase -- Hamiltonian dynamics (org):")
     demo_wave()
+    print("\nLeapfrog -- symplectic two-stage (org^(2)):")
+    demo_leapfrog()
 
 
 if __name__ == "__main__":

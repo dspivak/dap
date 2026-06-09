@@ -37,6 +37,7 @@ Requires Python ≥ 3.10; pulls in JAX and NumPy.
 | `interpretation.py` | the shared, integrator-free polynomial interpretation |
 | `integrator.py` | the configuration and phase integrators |
 | `functors.py` | `Phiconf`, `Phiphase` |
+| `leapfrog.py` | leapfrog as an `org^(2)` coalgebra (stable wave) |
 | `wiring.py` | compose boxes (chains, graphs, tensor) |
 | `learning.py` | gradient descent with backpropagation |
 | `demo.py`, `build.py` | run the examples / build your own |
@@ -97,8 +98,10 @@ coalgebras in Moore form; autodiff backend = JAX.
 flow: stable for small steps, a genuine algorithm. `Phiphase` (wave) is explicit
 Euler on a *Hamiltonian* flow: the recurrence is exact, but as a time-stepper it
 is not symplectic, so the energy grows — `python -m dap.build` shows this
-directly. A stable wave simulation needs a symplectic, multi-stage integrator
-(the paper's `org^(K)` remark).
+directly. For a *stable* wave, choose `leapfrog`: the symplectic, two-stage
+velocity-Verlet integrator (`leapfrog.py`), which realizes the K=2 case of the
+paper's `org^(K)` (rmk.org_N) — two force evaluations per macro-tick, so it lands
+in `org^(2)` rather than `org`. Same diagram, bounded energy.
 
 ## License
 
