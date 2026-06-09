@@ -104,6 +104,35 @@ def _spark(v):
     return "".join(_BLOCKS[i] for i in idx)
 
 
+def _animate(a, dynamics, height=13, fps=18):
+    """Play a precomputed chain trajectory as a terminal animation (Ctrl-C to stop)."""
+    import sys
+    import time
+
+    T, K = a.shape
+    amax = max(float(np.max(np.abs(a))), 1e-12)
+    mid = height // 2
+    label = "Phileap (org^(2))" if dynamics == "leapfrog" else f"Phi{dynamics}"
+    try:
+        for t in range(T):
+            grid = [[" "] * K for _ in range(height)]
+            for col in range(K):
+                lv = int(np.clip(round(float(a[t, col]) / amax * mid), -mid, mid))
+                grid[mid - lv][col] = "●"
+            for col in range(K):  # baseline axis
+                if grid[mid][col] == " ":
+                    grid[mid][col] = "·"
+            body = "\n".join("".join(row) for row in grid)
+            sys.stdout.write("\033[H\033[2J")  # cursor home + clear screen
+            sys.stdout.write(f"  {label}   wave on {K} particles   t = {t:>4}/{T - 1}   (Ctrl-C to stop)\n\n")
+            sys.stdout.write(body + "\n")
+            sys.stdout.flush()
+            time.sleep(1.0 / fps)
+    except KeyboardInterrupt:
+        pass
+    sys.stdout.write("\n")
+
+
 def _vec(v):
     return np.array2string(np.asarray(v), precision=2, suppress_small=True, max_line_width=70)
 
@@ -180,55 +209,58 @@ def parse_graph(spec):
 # ---------------------------------------------------------------------------
 
 
-def run_chain(dynamics, K, m, kappa, init_kind, steps):
+def _chain_trajectory(dynamics, K, m, kappa, q0, steps):
+    """Step the harmonic chain under the chosen dynamics; return the (steps+1, K) q-trajectory."""
     arr = compose_chain([harmonic_particle(m, kappa)] * K)
-    q0 = _initial(K, init_kind)
-
     if dynamics == "leapfrog":
         from .leapfrog import Phileap
         O = Phileap(arr)
         state = (q0, jnp.zeros(K))
-        print(f"\nbuilt  wire_{K}(Part,...,Part) : I -> box,  Phileap (org^(2)),  state = T*R^{K}")
         bdy = lambda op: (kappa * op[0], jnp.array([0.0]))  # pinned ends, from emitted q_K
         traj = [np.asarray(q0)]
         for _ in range(steps):
             _, _, state = O.with_state(state).run_one(_IN_POS_CLOSED, bdy)
             traj.append(np.asarray(state[0]))
-        a = np.stack(traj)
-        peaks = np.abs(a).max(axis=1)
-        print(f"  q(0)   = {_vec(a[0])}")
-        print(f"  q({steps:>3}) = {_vec(a[-1])}")
-        print(f"  shape  {_spark(a[0])}  ->  {_spark(a[-1])}   (try init=sine or bump to see a wave)")
-        res = max((float(np.abs(m * (a[t + 2] - 2 * a[t + 1] + a[t]) - kappa * _laplacian_pinned(a[t + 1])).max())
-                   for t in range(len(a) - 2)), default=0.0)
-        print(f"  centered WAVE recurrence  m*q'' = kappa*Lap(center) :  residual {res:.1e}")
-        print(f"  peak |q|: {peaks[0]:.2f} -> {peaks.max():.2f}  (bounded -- symplectic, stays stable)")
-        return
+        return np.stack(traj)
 
     O = Phiphase(arr) if dynamics == "phase" else Phiconf(arr)
     state = (q0, jnp.zeros(K)) if dynamics == "phase" else q0
-    space = "T*R^%d" % K if dynamics == "phase" else "R^%d" % K
-    print(f"\nbuilt  wire_{K}(Part,...,Part) : I -> box,  Phi{dynamics},  state = {space}")
-
     traj = [np.asarray(q0)]
     for _ in range(steps):
         q = state[0] if dynamics == "phase" else state
         in_dir = (jnp.array([kappa * float(q[K - 1])]), jnp.array([0.0]))  # pinned ends
         _, _, state = O.with_state(state).run_one(_IN_POS_CLOSED, lambda _o, d=in_dir: d)
         traj.append(np.asarray(state[0] if dynamics == "phase" else state))
-    a = np.stack(traj)
+    return np.stack(traj)
 
+
+def run_chain(dynamics, K, m, kappa, init_kind, steps, animate=False):
+    q0 = _initial(K, init_kind)
+    a = _chain_trajectory(dynamics, K, m, kappa, q0, steps)
+
+    if animate:
+        _animate(a, dynamics)
+
+    space = "T*R^%d" % K if dynamics in ("phase", "leapfrog") else "R^%d" % K
+    name = "Phileap (org^(2))" if dynamics == "leapfrog" else f"Phi{dynamics}"
+    print(f"\nbuilt  wire_{K}(Part,...,Part) : I -> box,  {name},  state = {space}")
     print(f"  q(0)   = {_vec(a[0])}")
     print(f"  q({steps:>3}) = {_vec(a[-1])}")
+    print(f"  shape  {_spark(a[0])}  ->  {_spark(a[-1])}")
     peaks = np.abs(a).max(axis=1)
-    if dynamics == "phase":
-        res = max(float(np.abs(m * (a[t + 2] - 2 * a[t + 1] + a[t]) - kappa * _laplacian_pinned(a[t])).max())
-                  for t in range(len(a) - 2))
+    if dynamics == "leapfrog":
+        res = max((float(np.abs(m * (a[t + 2] - 2 * a[t + 1] + a[t]) - kappa * _laplacian_pinned(a[t + 1])).max())
+                   for t in range(len(a) - 2)), default=0.0)
+        print(f"  centered WAVE recurrence  m*q'' = kappa*Lap(center) :  residual {res:.1e}")
+        print(f"  peak |q|: {peaks[0]:.2f} -> {peaks.max():.2f}  (bounded -- symplectic, stays stable)")
+    elif dynamics == "phase":
+        res = max((float(np.abs(m * (a[t + 2] - 2 * a[t + 1] + a[t]) - kappa * _laplacian_pinned(a[t])).max())
+                   for t in range(len(a) - 2)), default=0.0)
         print(f"  discrete WAVE equation  m*q'' = kappa*Lap :  residual {res:.1e}  (exact identity)")
-        print(f"  peak |q|: {peaks[0]:.2f} -> {peaks[-1]:.1e}  (grows: explicit Euler isn't symplectic -- exact recurrence, not a stable run)")
+        print(f"  peak |q|: {peaks[0]:.2f} -> {peaks[-1]:.1e}  (grows: explicit Euler isn't symplectic)")
     else:
-        res = max(float(np.abs(m * (a[t + 1] - a[t]) - kappa * _laplacian_pinned(a[t])).max())
-                  for t in range(len(a) - 1))
+        res = max((float(np.abs(m * (a[t + 1] - a[t]) - kappa * _laplacian_pinned(a[t])).max())
+                   for t in range(len(a) - 1)), default=0.0)
         print(f"  discrete HEAT equation  m*q' = kappa*Lap :  residual {res:.1e}  (exact identity)")
         print(f"  peak |q|: {peaks[0]:.2f} -> {peaks[-1]:.1e}  ({'dissipating' if peaks[-1] < peaks[0] else 'growing (step too large)'})")
 
@@ -328,8 +360,9 @@ def main():
             kappa = ask("spring kappa", 0.9 if dynamics in ("phase", "leapfrog") else 0.2, float)
             init = ask("initial displacement (random / zeros / sine [n] / bump / seed)", "random",
                        parse=parse_init)
-            steps = ask("steps", 20, int)
-            run_chain(dynamics, K, m, kappa, init, steps)
+            steps = ask("steps", 60, int)
+            animate = ask("animate? (y/n)", "n", parse=str.lower, choices={"y", "n"}) == "y"
+            run_chain(dynamics, K, m, kappa, init, steps, animate)
         elif system == 2:
             V, edges = ask("graph ('path N' / 'ring N' / 'complete N' / 'i-j i-j ...')",
                            "ring 6", parse=parse_graph)

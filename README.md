@@ -60,7 +60,8 @@ code. You choose:
 It prints the start/end state, a `▁▂▃` shape sparkline, the residual of the relevant
 discrete equation, and whether the energy stays bounded. Start a wave from `random`
 and it looks like noise — broadband data, every mode dephasing; start from `sine` or
-`bump` to see a clean wave.
+`bump` to see a clean wave. On a chain, answer **`animate? y`** to watch the wave
+evolve as a terminal animation (Ctrl-C to stop).
 
 ## The one idea
 
