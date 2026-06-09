@@ -44,6 +44,24 @@ After `pip install -e .` the `dap` and `dap-demo` commands are on your PATH (no
 | `learning.py` | gradient descent with backpropagation |
 | `demo.py`, `build.py` | run the examples / build your own |
 
+## Build your own
+
+`dap` (the interactive builder, `build.py`) composes and runs an arrangement with no
+code. You choose:
+
+- **dynamics** — `phase` (Hamiltonian/Euler), `conf` (descent), or `leapfrog`
+  (symplectic, stable wave);
+- **system** — a chain of harmonic particles, a graph of them (`path N` / `ring N` /
+  `complete N` / explicit `i-j` edges), or gradient descent on a linear model;
+- **initial condition** — `random`, `zeros`, `sine [n]` (a smooth standing-wave
+  mode), `bump` (a localized pulse that splits into travelling waves), or an integer
+  seed.
+
+It prints the start/end state, a `▁▂▃` shape sparkline, the residual of the relevant
+discrete equation, and whether the energy stays bounded. Start a wave from `random`
+and it looks like noise — broadband data, every mode dephasing; start from `sine` or
+`bump` to see a clean wave.
+
 ## The one idea
 
 A morphism of polynomials **is** a pair of programs: a forward map on positions
@@ -107,8 +125,8 @@ coalgebras in Moore form; autodiff backend = JAX.
 `Phiconf` (gradient descent, Newton, heat) is explicit Euler on a *gradient*
 flow: stable for small steps, a genuine algorithm. `Phiphase` (wave) is explicit
 Euler on a *Hamiltonian* flow: the recurrence is exact, but as a time-stepper it
-is not symplectic, so the energy grows — `python -m dap.build` shows this
-directly. For a *stable* wave, choose `leapfrog` — symplectic velocity Verlet,
+is not symplectic, so the energy grows — `dap` shows this directly. For a *stable*
+wave, choose `leapfrog` — symplectic velocity Verlet,
 which evaluates the force twice per step, so it lands in `org^(2)` rather than
 `org`. `org2.py` builds the general two-stage coalgebra `[p,q]^{∘2}` with
 composition; `leapfrog.py` is one instance of it. Same diagram, bounded energy.

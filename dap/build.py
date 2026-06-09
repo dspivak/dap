@@ -56,23 +56,52 @@ def ask(prompt, default=None, parse=str, choices=None):
 
 
 def _initial(K, spec):
-    if spec == "zeros":
+    parts = spec.split()
+    kind = parts[0]
+    if kind == "zeros":
         return jnp.zeros(K)
-    seed = None if spec == "random" else int(spec)  # integer spec => reproducible draw
+    if kind == "sine":  # smooth standing-wave mode n (looks like a wave)
+        n = int(parts[1]) if len(parts) > 1 else 1
+        js = np.arange(1, K + 1)
+        return jnp.asarray(np.sin(js * n * np.pi / (K + 1)))
+    if kind == "bump":  # localized pulse -> splits into two travelling waves
+        js = np.arange(1, K + 1)
+        return jnp.asarray(np.exp(-0.5 * ((js - (K + 1) / 2.0) / max(K / 8.0, 1.0)) ** 2))
+    seed = None if kind == "random" else int(kind)  # integer => reproducible draw
     return jnp.asarray(np.random.default_rng(seed).standard_normal(K))
 
 
 def parse_init(spec):
-    """'random' (fresh each run), 'zeros', or an integer seed (reproducible)."""
+    """'random' (fresh) / 'zeros' / 'sine [n]' (smooth mode) / 'bump' / integer seed."""
     spec = spec.strip().lower()
-    if spec not in ("random", "zeros"):
-        int(spec)  # validate as a seed; raises -> ask() re-prompts
+    parts = spec.split()
+    if parts and parts[0] in ("random", "zeros", "bump"):
+        return spec
+    if parts and parts[0] == "sine":
+        if len(parts) > 1:
+            int(parts[1])  # validate the mode number
+        return spec
+    int(spec)  # otherwise an integer seed; raises -> ask() re-prompts
     return spec
 
 
 def _laplacian_pinned(v):
     aug = np.concatenate([[0.0], np.asarray(v), [0.0]])
     return aug[:-2] - 2.0 * aug[1:-1] + aug[2:]
+
+
+_BLOCKS = "▁▂▃▄▅▆▇█"
+
+
+def _spark(v):
+    """A one-line block-glyph profile of a vector (so you can see the shape)."""
+    v = np.asarray(v, dtype=float)
+    lo, hi = float(v.min()), float(v.max())
+    if hi - lo < 1e-12:
+        return _BLOCKS[len(_BLOCKS) // 2] * len(v)
+    idx = np.clip(((v - lo) / (hi - lo) * (len(_BLOCKS) - 1)).round().astype(int),
+                  0, len(_BLOCKS) - 1)
+    return "".join(_BLOCKS[i] for i in idx)
 
 
 def _vec(v):
@@ -169,6 +198,7 @@ def run_chain(dynamics, K, m, kappa, init_kind, steps):
         peaks = np.abs(a).max(axis=1)
         print(f"  q(0)   = {_vec(a[0])}")
         print(f"  q({steps:>3}) = {_vec(a[-1])}")
+        print(f"  shape  {_spark(a[0])}  ->  {_spark(a[-1])}   (try init=sine or bump to see a wave)")
         res = max((float(np.abs(m * (a[t + 2] - 2 * a[t + 1] + a[t]) - kappa * _laplacian_pinned(a[t + 1])).max())
                    for t in range(len(a) - 2)), default=0.0)
         print(f"  centered WAVE recurrence  m*q'' = kappa*Lap(center) :  residual {res:.1e}")
@@ -296,7 +326,7 @@ def main():
             K = ask("K particles", 7, int)
             m = ask("mass m", 1.0, float)
             kappa = ask("spring kappa", 0.9 if dynamics in ("phase", "leapfrog") else 0.2, float)
-            init = ask("initial displacement (random / zeros / seed int)", "random",
+            init = ask("initial displacement (random / zeros / sine [n] / bump / seed)", "random",
                        parse=parse_init)
             steps = ask("steps", 20, int)
             run_chain(dynamics, K, m, kappa, init, steps)
@@ -305,7 +335,7 @@ def main():
                            "ring 6", parse=parse_graph)
             m = ask("mass m", 1.0, float)
             kappa = ask("spring kappa", 0.5 if dynamics in ("phase", "leapfrog") else 0.15, float)
-            init = ask("initial displacement (random / zeros / seed int)", "random",
+            init = ask("initial displacement (random / zeros / sine [n] / bump / seed)", "random",
                        parse=parse_init)
             steps = ask("steps", 12, int)
             run_graph(dynamics, V, edges, m, kappa, init, steps)
