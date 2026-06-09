@@ -70,12 +70,12 @@ prompt like:
 > a (forward, backward) pair, and compose them into the dynamics functor; carry
 > coalgebras in Moore form (a state plus a step function), never materializing the
 > internal hom. Provide two integrators — configuration (descent) and phase
-> (Hamiltonian). Also build the multi-stage semantics org^(K): a [p,q]^{∘K}-
-> coalgebra is K emit/receive rounds per macro-tick, where each round but the last
-> lands in an inner (K−1)-stage coalgebra (the substitution [p,q] ◁ ⋯ ◁ [p,q]),
-> with composition (parallel, then_static). A two-stage integrator then gives
-> leapfrog (velocity Verlet) as one org^(2) instance — derived from org^(2), not
-> hardcoded. Then build the worked examples — Newton's method, gradient descent
+> (Hamiltonian). Also build the two-stage semantics org^(2): a [p,q]^{∘2}-
+> coalgebra is two emit/receive rounds per macro-tick, where the first round lands
+> in an inner one-stage coalgebra (the substitution [p,q] ◁ [p,q]) rather than a
+> new state, with composition (parallel, then_static). A two-stage integrator then
+> gives leapfrog (velocity Verlet) as one org^(2) instance — derived from org^(2),
+> not hardcoded. Then build the worked examples — Newton's method, gradient descent
 > with backpropagation, the wave equation (Euler and stable leapfrog), the heat
 > equation — and check that each reproduces the paper's recurrences. Use ℝᵈ for
 > manifolds, store covector fields as affine (A, b) pairs, and use JAX for autodiff.
@@ -93,10 +93,9 @@ Spelled out, the recipe is:
    materialize the internal hom.
 6. Pick an **integrator** — a state space plus an update from an incoming covector
    — configuration or phase.
-7. Build the multi-stage semantics **`org^(K)`** (K emit/receive rounds; the
-   substitution `[p,q]^{∘K}`, each round but the last landing in an inner
-   `(K−1)`-stage coalgebra) **with composition**; leapfrog is then one two-stage
-   instance.
+7. Build the two-stage semantics **`org^(2)`** (two emit/receive rounds; the
+   substitution `[p,q]^{∘2} = [p,q] ◁ [p,q]`, the first round landing in an inner
+   one-stage coalgebra) **with composition**; leapfrog is then one instance.
 8. Instantiate the worked examples and check they reproduce the paper's recurrences.
 
 Four representation choices the mathematics does not dictate, which this code
@@ -113,9 +112,9 @@ directly. For a *stable* wave, choose `leapfrog` — symplectic velocity Verlet,
 which evaluates the force twice per step, so it lands in `org^(2)` rather than
 `org`. `org2.py` builds the general two-stage coalgebra `[p,q]^{∘2}` with
 composition; `leapfrog.py` is one instance of it. Same diagram, bounded energy.
-(The general *functor* `sarr → org^(K)` of rmk.org_N is still a conjecture; the
-code provides the datatype, a leapfrog instance, and composition — tested, not a
-proof.)
+(That this is a *functor* `sarr → org^(2)` — the K=2 case of rmk.org_N — is still
+a conjecture; the code provides the datatype, a leapfrog instance, and composition
+— tested, not a proof.)
 
 ## License
 

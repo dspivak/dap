@@ -3,7 +3,7 @@
 Leapfrog is symplectic and evaluates the force twice per step, so it is a
 two-stage ``[p,q]^{∘2}``-coalgebra (rmk.org_N) — an ``org2.OrgMorphism2``, not a
 hardcoded stepper. It reuses the same polynomial interpretation as
-``Phiconf``/``Phiphase``; only the integrator is multi-stage:
+``Phiconf``/``Phiphase``; only the integrator is two-stage:
 
     round 1 at q   : read force ξ_Q(q),  half-kick + drift to q' = q + sharpR_q(ξ - ½ξ_Q(q))
     round 2 at q'  : read force ξ_Q(q'), half-kick to ξ' = ξ½ - ½ξ_Q(q')

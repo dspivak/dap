@@ -9,14 +9,14 @@ a ``p``-direction, and lands *not* in a new state ``S`` but in an **inner 1-stag
 Round 2 runs that inner coalgebra and lands in ``S``.
 
 This module is the **general datatype**, independent of any integrator: ``step``
-may be *any* such two-round behavior. Specific multi-stage integrators (leapfrog,
-``leapfrog.py``) are instances built on top of it. Composition ``parallel`` and
+may be *any* such two-round behavior. A two-stage integrator (leapfrog,
+``leapfrog.py``) is one instance built on top of it. Composition ``parallel`` and
 ``then_static`` mirror ``org.OrgMorphism``, delegating the inner round to the
 1-stage versions.
 
 Caveat: this provides the datatype, its execution, and these two composites
-(tested). The claim that ``sarr → org^(K)`` is a lax monoidal *functor*
-(rmk.org_N) is conjectural and is **not** proved here.
+(tested). The claim that ``sarr → org^(2)`` is a lax monoidal *functor*
+(the K=2 case of rmk.org_N) is conjectural and is **not** proved here.
 """
 
 from __future__ import annotations
