@@ -141,3 +141,63 @@ class OrgMorphism2:
             (self.state, other.state),
             new_step,
         )
+
+
+def org2_from_integrator(arr, intg2) -> OrgMorphism2:
+    """Turn a two-stage integrator into an ``org^(2)`` morphism (the K=2 analog of
+    ``functors.Phi`` / ``prop.integrator_to_org``).
+
+    Round 1 runs the interpretation ``Phi'`` at ``read1(state)`` and reads the
+    parameter covector ``xi_Q1``; ``advance`` produces the intermediate. Round 2 is
+    a genuine **1-stage** ``org.OrgMorphism`` built by ``functors.Phi`` from a
+    1-stage integrator derived from ``read2``/``finish`` — so ``org^(2)`` is
+    assembled the same way ``org`` is, just from a two-stage integrator.
+    """
+    from .functors import Phi, phi_box_poly
+    from .integrator import Integrator
+    from .interpretation import smooth_interpretation
+
+    Q = arr.Q
+    interp = smooth_interpretation(arr)
+    src_p = phi_box_poly(arr.out_dim_M, arr.in_dim_M)
+    tgt_p = phi_box_poly(arr.out_dim_N, arr.in_dim_N)
+
+    def step(state):
+        q1 = intg2.read1(state)
+        position_action, direction_action = interp(q1)
+
+        def act_positions(in_pos):
+            out_m, omega_M = in_pos
+            return position_action(out_m, omega_M)
+
+        def act_directions(in_pos, in_dir):
+            out_m, omega_M = in_pos
+            xi_N, in_n = in_dir
+            _, xi_M, in_m = direction_action(out_m, omega_M, xi_N, in_n)
+            return (xi_M, in_m)
+
+        act = PolyMap(src_p, tgt_p, act_positions, act_directions, label="stage1")
+
+        def fiber(in_pos):
+            out_m, omega_M = in_pos
+            out_pos = position_action(out_m, omega_M)  # emit at read1(state)
+
+            def at_pos(in_dir):
+                xi_N, in_n = in_dir
+                xi_Q1, xi_M, in_m = direction_action(out_m, omega_M, xi_N, in_n)
+                mid = intg2.advance(Q, state, xi_Q1)
+                # round 2: a 1-stage org-morphism from a 1-stage integrator (read2/finish)
+                round2 = Integrator(
+                    init=lambda Q_, m=mid: m,
+                    position=lambda s: intg2.read2(s),
+                    step=lambda Q_, s, xi_Q2, st=state: intg2.finish(Q_, st, s, xi_Q2),
+                    label="stage2",
+                )
+                inner = Phi(arr, round2).with_state(mid)
+                return (xi_M, in_m), inner
+
+            return out_pos, at_pos
+
+        return act, fiber
+
+    return OrgMorphism2(src_p, tgt_p, intg2.init(Q), step)

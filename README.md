@@ -36,10 +36,10 @@ After `pip install -e .` the `dap` and `dap-demo` commands are on your PATH (no
 | `arrangement.py` | a smooth adaptive arrangement (a morphism of `sarr`) |
 | `polynomial.py`, `org.py` | polynomials and `[p,q]`-coalgebras (Moore form) |
 | `interpretation.py` | the shared, integrator-free polynomial interpretation |
-| `integrator.py` | the configuration and phase integrators |
+| `integrator.py` | configuration, phase, and two-stage (`Integrator2`) integrators |
 | `functors.py` | `Phiconf`, `Phiphase` |
 | `org2.py` | general two-stage coalgebras `[p,q]^{∘2}` (`org^(2)`) + composition |
-| `leapfrog.py` | leapfrog as one `org^(2)` instance (stable wave) |
+| `leapfrog.py` | leapfrog as a two-stage integrator → `org^(2)` (stable wave) |
 | `wiring.py` | compose boxes (chains, graphs, tensor) |
 | `learning.py` | gradient descent with backpropagation |
 | `demo.py`, `build.py` | run the examples / build your own |

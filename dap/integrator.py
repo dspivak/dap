@@ -76,3 +76,29 @@ def phase_integrator() -> Integrator:
         step=lambda Q, s, xi_Q: (s[0] + Q.apply_sharp(s[0], s[1]), s[1] - xi_Q),
         label="phase",
     )
+
+
+@dataclass(frozen=True)
+class Integrator2:
+    """A *two-stage* cot-integrator: operationally ``Store∘S ⇒ cot^{◁2}`` (rmk.org_N).
+
+    The multi-stage form the remark proposes (``upd: Store∘S ⇒ p^{◁2}`` with
+    ``p = cot``): two emit/receive rounds before the state updates. As callables:
+
+    * ``init(Q)``                       -- the initial state.
+    * ``read1(state)``                  -- parameter position emitted in round 1.
+    * ``advance(Q, state, xi_Q1)``      -- consume the round-1 covector; return the
+                                           intermediate ("inner coalgebra state").
+    * ``read2(mid)``                    -- parameter position emitted in round 2.
+    * ``finish(Q, state, mid, xi_Q2)``  -- consume the round-2 covector; new state.
+
+    ``org2.org2_from_integrator`` turns one of these into an ``org^(2)`` morphism,
+    exactly as ``functors.Phi`` turns a 1-stage ``Integrator`` into an ``org`` one.
+    """
+
+    init: Callable[[ReactiveVectorSpace], Any]
+    read1: Callable[[Any], Any]
+    advance: Callable[[ReactiveVectorSpace, Any, Any], Any]
+    read2: Callable[[Any], Any]
+    finish: Callable[[ReactiveVectorSpace, Any, Any, Any], Any]
+    label: str = ""

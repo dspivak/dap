@@ -9,8 +9,10 @@ import jax.numpy as jnp
 import numpy as np
 
 from dap.arrangement import SmoothArrangement
+from dap.functors import Phiphase
+from dap.integrator import Integrator2
 from dap.leapfrog import Phileap
-from dap.org2 import OrgMorphism2
+from dap.org2 import OrgMorphism2, org2_from_integrator
 from dap.polynomial import identity_poly_map
 from dap.rvect import diagonal
 
@@ -69,3 +71,34 @@ def test_then_static_identity_is_a_noop():
         _, _, sc = comp.with_state(sc).run_one(_IN_POS0, lambda op: _IN_DIR0)
     np.testing.assert_allclose(np.asarray(sc[0]), np.asarray(sb[0]), atol=1e-10)
     np.testing.assert_allclose(np.asarray(sc[1]), np.asarray(sb[1]), atol=1e-10)
+
+
+def test_org2_from_integrator_is_general():
+    """The builder works for ANY two-stage integrator, not just leapfrog: a
+    'two phase-Euler steps' Integrator2 equals running Phiphase twice."""
+
+    def advance(Q, s, xi_Q1):                       # one phase-Euler step
+        q, xi = s
+        return (q + Q.apply_sharp(q, xi), xi - xi_Q1)
+
+    def finish(Q, s, mid, xi_Q2):                   # another phase-Euler step
+        q, xi = mid
+        return (q + Q.apply_sharp(q, xi), xi - xi_Q2)
+
+    two_phase = Integrator2(
+        init=lambda Q: (jnp.zeros(Q.dim), jnp.zeros(Q.dim)),
+        read1=lambda s: s[0], advance=advance,
+        read2=lambda mid: mid[0], finish=finish, label="2phase",
+    )
+
+    o = _oscillator(0.6)
+    A = org2_from_integrator(o, two_phase)
+    B = Phiphase(o)
+
+    s = (jnp.array([1.0]), jnp.array([0.2]))
+    _, _, a_state = A.with_state(s).run_one(_IN_POS0, lambda op: _IN_DIR0)
+    _, _, b1 = B.with_state(s).run_one(_IN_POS0, lambda op: _IN_DIR0)
+    _, _, b2 = B.with_state(b1).run_one(_IN_POS0, lambda op: _IN_DIR0)
+
+    np.testing.assert_allclose(np.asarray(a_state[0]), np.asarray(b2[0]), atol=1e-10)
+    np.testing.assert_allclose(np.asarray(a_state[1]), np.asarray(b2[1]), atol=1e-10)

@@ -13,13 +13,14 @@ from .polynomial import Yon, Cot, DirichletProduct, PolyMap
 from .org import OrgMorphism
 from .integrator import (
     Integrator,
+    Integrator2,
     configuration_integrator,
     phase_integrator,
 )
 from .interpretation import smooth_interpretation
 from .functors import Phi, Phiconf, Phiphase, cot_object, cot_map
-from .org2 import OrgMorphism2
-from .leapfrog import Phileap
+from .org2 import OrgMorphism2, org2_from_integrator
+from .leapfrog import Phileap, leapfrog_integrator
 from . import functors
 from . import wiring
 from . import learning
@@ -33,6 +34,7 @@ __all__ = [
     "PolyMap",
     "OrgMorphism",
     "Integrator",
+    "Integrator2",
     "configuration_integrator",
     "phase_integrator",
     "smooth_interpretation",
@@ -40,7 +42,9 @@ __all__ = [
     "Phiconf",
     "Phiphase",
     "Phileap",
+    "leapfrog_integrator",
     "OrgMorphism2",
+    "org2_from_integrator",
     "cot_object",
     "cot_map",
     "functors",
