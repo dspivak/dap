@@ -87,8 +87,8 @@ def test_org2_from_integrator_is_general():
 
     two_phase = Integrator2(
         init=lambda Q: (jnp.zeros(Q.dim), jnp.zeros(Q.dim)),
-        read1=lambda s: s[0], advance=advance,
-        read2=lambda mid: mid[0], finish=finish, label="2phase",
+        read1=lambda Q, s: s[0] + Q.apply_sharp(s[0], s[1]), advance=advance,
+        read2=lambda Q, mid: mid[0] + Q.apply_sharp(mid[0], mid[1]), finish=finish, label="2phase",
     )
 
     o = _oscillator(0.6)

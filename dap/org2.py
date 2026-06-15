@@ -1,4 +1,4 @@
-"""``org^(2)``: general two-stage coalgebras ``[p,q]^{∘2}``-Coalg (rmk.org_N).
+"""``org^(2)``: general two-stage coalgebras ``[p,q]^{∘2}``-Coalg (rmk.multistage).
 
 A morphism in ``org^(2)`` from ``p`` to ``q`` is a coalgebra
 ``β : S → [p,q]([p,q](S))`` for the substitution ``[p,q]^{∘2} = [p,q] ◁ [p,q]``.
@@ -16,7 +16,7 @@ may be *any* such two-round behavior. A two-stage integrator (leapfrog,
 
 Caveat: this provides the datatype, its execution, and these two composites
 (tested). The claim that ``sarr → org^(2)`` is a lax monoidal *functor*
-(the K=2 case of rmk.org_N) is conjectural and is **not** proved here.
+(the K=2 case of rmk.multistage) is conjectural and is **not** proved here.
 """
 
 from __future__ import annotations
@@ -163,7 +163,7 @@ def org2_from_integrator(arr, intg2) -> OrgMorphism2:
     tgt_p = phi_box_poly(arr.out_dim_N, arr.in_dim_N)
 
     def step(state):
-        q1 = intg2.read1(state)
+        q1 = intg2.read1(Q, state)
         position_action, direction_action = interp(q1)
 
         def act_positions(in_pos):
@@ -189,7 +189,7 @@ def org2_from_integrator(arr, intg2) -> OrgMorphism2:
                 # round 2: a 1-stage org-morphism from a 1-stage integrator (read2/finish)
                 round2 = Integrator(
                     init=lambda Q_, m=mid: m,
-                    position=lambda s: intg2.read2(s),
+                    position=lambda Q_, s: intg2.read2(Q_, s),
                     step=lambda Q_, s, xi_Q2, st=state: intg2.finish(Q_, st, s, xi_Q2),
                     label="stage2",
                 )

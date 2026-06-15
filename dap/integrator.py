@@ -13,11 +13,11 @@ We implement an integrator as three callables bound to the parameter reactive
 vector space ``Q`` at runtime:
 
 * ``init(Q)``           -- the initial state.
-* ``position(s)``       -- the parameter position ``q in Q`` to run the
+* ``position(Q, s)``    -- the parameter position ``q in Q`` to run the
                            (integrator-free) interpretation at.
 * ``step(Q, s, xi_Q)``  -- the new state, given the parameter covector ``xi_Q``.
 
-The interpretation depends only on ``position(s)``; everything that differs
+The interpretation depends only on ``position(Q, s)``; everything that differs
 between configuration and phase dynamics lives in ``init``/``position``/``step``.
 """
 
@@ -36,7 +36,7 @@ class Integrator:
     """A cot-integrator (def.integrator), as a triple of callables."""
 
     init: Callable[[ReactiveVectorSpace], Any]
-    position: Callable[[Any], Any]
+    position: Callable[[ReactiveVectorSpace, Any], Any]
     step: Callable[[ReactiveVectorSpace, Any, Any], Any]
     label: str = ""
 
@@ -51,28 +51,32 @@ def configuration_integrator() -> Integrator:
 
     return Integrator(
         init=lambda Q: jnp.zeros(Q.dim),
-        position=lambda s: s,
+        position=lambda Q, s: s,
         step=lambda Q, s, xi_Q: s - Q.apply_sharp(s, xi_Q),
         label="conf",
     )
 
 
 def phase_integrator() -> Integrator:
-    """The phase integrator ``phase = (|T^*-|, upd_phase)`` (sec.phase_integrators).
+    """The phase integrator (sec.phase_integrators): the instance nu_{sigma^1, beta}.
 
     State space ``S = |T^*Q| = Q (+) Q^*``, written ``s = (q, xi)`` for position
-    and momentum. One explicit symplectic-Euler step of Hamilton's equations
-    (eqn.phase_update, eqn.state_update):
+    and momentum. The readout is the *presented position* (the exponential
+    readout sigma^1, eqn.presented_position):
 
-        (q, xi) |-> (q + sharpR_q(xi), xi - xi_Q).
+        q~ = q + sharpR_q(xi),
 
-    The position moves by the velocity ``sharpR_q(xi)`` read off the stored
-    momentum; the momentum moves by subtracting the incoming gradient ``xi_Q``.
+    the position the step moves to. Forces are evaluated there, which is what
+    makes the step symplectic (semi-implicit Euler) rather than explicit. With
+    the velocity read off the stored momentum, one step of Hamilton's equations
+    (eqn.phase_update) is
+
+        (q, xi) |-> (q + sharpR_q(xi), xi - xi_Q),   xi_Q computed at q~.
     """
 
     return Integrator(
         init=lambda Q: (jnp.zeros(Q.dim), jnp.zeros(Q.dim)),
-        position=lambda s: s[0],
+        position=lambda Q, s: s[0] + Q.apply_sharp(s[0], s[1]),
         step=lambda Q, s, xi_Q: (s[0] + Q.apply_sharp(s[0], s[1]), s[1] - xi_Q),
         label="phase",
     )
@@ -80,16 +84,16 @@ def phase_integrator() -> Integrator:
 
 @dataclass(frozen=True)
 class Integrator2:
-    """A *two-stage* cot-integrator: operationally ``Store∘S ⇒ cot^{◁2}`` (rmk.org_N).
+    """A *two-stage* cot-integrator: operationally ``Store∘S ⇒ cot^{◁2}`` (rmk.multistage).
 
     The multi-stage form the remark proposes (``upd: Store∘S ⇒ p^{◁2}`` with
     ``p = cot``): two emit/receive rounds before the state updates. As callables:
 
     * ``init(Q)``                       -- the initial state.
-    * ``read1(state)``                  -- parameter position emitted in round 1.
+    * ``read1(Q, state)``               -- parameter position emitted in round 1.
     * ``advance(Q, state, xi_Q1)``      -- consume the round-1 covector; return the
                                            intermediate ("inner coalgebra state").
-    * ``read2(mid)``                    -- parameter position emitted in round 2.
+    * ``read2(Q, mid)``                 -- parameter position emitted in round 2.
     * ``finish(Q, state, mid, xi_Q2)``  -- consume the round-2 covector; new state.
 
     ``org2.org2_from_integrator`` turns one of these into an ``org^(2)`` morphism,
@@ -97,8 +101,8 @@ class Integrator2:
     """
 
     init: Callable[[ReactiveVectorSpace], Any]
-    read1: Callable[[Any], Any]
+    read1: Callable[[ReactiveVectorSpace, Any], Any]
     advance: Callable[[ReactiveVectorSpace, Any, Any], Any]
-    read2: Callable[[Any], Any]
+    read2: Callable[[ReactiveVectorSpace, Any], Any]
     finish: Callable[[ReactiveVectorSpace, Any, Any, Any], Any]
     label: str = ""

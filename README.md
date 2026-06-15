@@ -39,7 +39,7 @@ After `pip install -e .` the `dap` and `dap-demo` commands are on your PATH (no
 | `integrator.py` | configuration, phase, and two-stage (`Integrator2`) integrators |
 | `functors.py` | `Phiconf`, `Phiphase` |
 | `org2.py` | general two-stage coalgebras `[p,q]^{∘2}` (`org^(2)`) + composition |
-| `leapfrog.py` | leapfrog as a two-stage integrator → `org^(2)` (stable wave) |
+| `leapfrog.py` | leapfrog as a two-stage integrator → `org^(2)` (higher-order symplectic) |
 | `wiring.py` | compose boxes (chains, graphs, tensor) |
 | `learning.py` | gradient descent with backpropagation |
 | `demo.py`, `build.py` | run the examples / build your own |
@@ -49,8 +49,8 @@ After `pip install -e .` the `dap` and `dap-demo` commands are on your PATH (no
 `dap` (the interactive builder, `build.py`) composes and runs an arrangement with no
 code. You choose:
 
-- **dynamics** — `phase` (Hamiltonian/Euler), `conf` (descent), or `leapfrog`
-  (symplectic, stable wave);
+- **dynamics** — `phase` (Hamiltonian/symplectic Euler), `conf` (descent), or
+  `leapfrog` (higher-order symplectic);
 - **system** — a chain of harmonic particles, a graph of them (`path N` / `ring N` /
   `complete N` / explicit `i-j` edges), or gradient descent on a linear model;
 - **initial condition** — `random`, `zeros`, `sine [n]` (a smooth standing-wave
@@ -95,7 +95,7 @@ prompt like:
 > new state, with composition (parallel, then_static). A two-stage integrator then
 > gives leapfrog (velocity Verlet) as one org^(2) instance — derived from org^(2),
 > not hardcoded. Then build the worked examples — Newton's method, gradient descent
-> with backpropagation, the wave equation (Euler and stable leapfrog), the heat
+> with backpropagation, the wave equation (symplectic phase, plus leapfrog), the heat
 > equation — and check that each reproduces the paper's recurrences. Use ℝᵈ for
 > manifolds, store covector fields as affine (A, b) pairs, and use JAX for autodiff.
 
@@ -124,16 +124,16 @@ coalgebras in Moore form; autodiff backend = JAX.
 ## Runnable "for real"?
 
 `Phiconf` (gradient descent, Newton, heat) is explicit Euler on a *gradient*
-flow: stable for small steps, a genuine algorithm. `Phiphase` (wave) is explicit
-Euler on a *Hamiltonian* flow: the recurrence is exact, but as a time-stepper it
-is not symplectic, so the energy grows — `dap` shows this directly. For a *stable*
-wave, choose `leapfrog` — symplectic velocity Verlet,
-which evaluates the force twice per step, so it lands in `org^(2)` rather than
-`org`. `org2.py` builds the general two-stage coalgebra `[p,q]^{∘2}` with
-composition; `leapfrog.py` is one instance of it. Same diagram, bounded energy.
-(That this is a *functor* `sarr → org^(2)` — the K=2 case of rmk.org_N — is still
-a conjecture; the code provides the datatype, a leapfrog instance, and composition
-— tested, not a proof.)
+flow: stable for small steps, a genuine algorithm. `Phiphase` (wave) is the
+*symplectic* (semi-implicit) Euler step on a *Hamiltonian* flow: it reads out the
+presented position `q~ = q + sharp(p)` and evaluates the force there, so the energy
+stays bounded — `dap` shows the wave staying stable directly. `leapfrog` (velocity
+Verlet) is a higher-order symplectic alternative that evaluates the force twice per
+step, so it lands in `org^(2)` rather than `org`. `org2.py` builds the general
+two-stage coalgebra `[p,q]^{∘2}` with composition; `leapfrog.py` is one instance of
+it. (Whether `sarr → org^(2)` is a *functor* — cf. rmk.multistage — is left open;
+the code provides the datatype, a leapfrog instance, and composition — tested, not
+a proof.)
 
 ## License
 

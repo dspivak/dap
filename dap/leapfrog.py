@@ -1,4 +1,4 @@
-"""Leapfrog (velocity Verlet) as a two-stage integrator (rmk.org_N).
+"""Leapfrog (velocity Verlet) as a two-stage integrator (rmk.multistage).
 
 Leapfrog is now ONE ``Integrator2`` — a single ``Store∘S ⇒ cot^{◁2}`` natural
 transformation, the multi-stage integrator the remark proposes — pushed through
@@ -38,9 +38,9 @@ def leapfrog_integrator() -> Integrator2:
 
     return Integrator2(
         init=lambda Q: (jnp.zeros(Q.dim), jnp.zeros(Q.dim)),
-        read1=lambda s: s[0],
+        read1=lambda Q, s: s[0],
         advance=advance,
-        read2=lambda mid: mid[0],
+        read2=lambda Q, mid: mid[0],
         finish=finish,
         label="leapfrog",
     )

@@ -35,16 +35,17 @@ def _harmonic_particle(m: float, kappa: float) -> SmoothArrangement:
 def _composite_final(q, p, q_prev_extern, xi_N_extern, m, kappa):
     """Reference implementation of eqn.potlens_composite_final."""
     K = q.shape[0]
-    q_new = q + p / m
+    qt = q + p / m  # presented positions q~ (forces are evaluated here)
+    q_new = qt
     p_new = []
     for i in range(K):
         if i < K - 1:
-            q_prev = q_prev_extern if i == 0 else q[i - 1]
-            q_next = q[i + 1]
-            p_i_new = p[i] + kappa * (q_prev + q_next - 2.0 * q[i])
+            q_prev = q_prev_extern if i == 0 else qt[i - 1]
+            q_next = qt[i + 1]
+            p_i_new = p[i] + kappa * (q_prev + q_next - 2.0 * qt[i])
         else:
-            q_prev = q[i - 1] if K > 1 else q_prev_extern
-            p_i_new = p[i] + kappa * (q_prev - q[i]) - xi_N_extern
+            q_prev = qt[i - 1] if K > 1 else q_prev_extern
+            p_i_new = p[i] + kappa * (q_prev - qt[i]) - xi_N_extern
         p_new.append(p_i_new)
     return q_new, jnp.stack(p_new)
 
@@ -94,9 +95,9 @@ def test_omega_N_is_harmonic_spring_field():
 def test_discrete_wave_equation_with_pinned_ends():
     """eqn.discrete_wave: m * ddot q_i = kappa (q_{i-1} - 2 q_i + q_{i+1}) at every step.
 
-    Boundary conditions eqn.wave_bc with L = 0: q_0 := 0, xi_N := kappa * q_K.
-    The recurrence is an exact algebraic identity at every step (cf. rmk.euler_energy),
-    so a short horizon keeps residuals near float64 precision.
+    Boundary conditions eqn.wave_bc: q_0 := 0, xi_N := kappa * q~_K (presented).
+    The recurrence is the centered one (eqn.recurrence): m ddot q_i(t) =
+    kappa Lap(q(t+1))_i, an exact identity at every step.
     """
     K = 5
     T = 10
@@ -113,14 +114,14 @@ def test_discrete_wave_equation_with_pinned_ends():
     for _ in range(T + 2):
         q, p = state
         q_prev = jnp.array([0.0])
-        xi_N = jnp.array([kappa * float(q[K - 1])])
+        xi_N = jnp.array([kappa * float(q[K - 1] + p[K - 1] / m)])
         _, _, state = O.with_state(state).run_one(_IN_POS, lambda _o: (xi_N, q_prev))
         q_traj.append(state[0])
 
     q_arr = np.stack([np.asarray(q) for q in q_traj], axis=0)
     for t in range(T):
         ddot_q = q_arr[t + 2] - 2.0 * q_arr[t + 1] + q_arr[t]
-        q_aug = np.concatenate([[0.0], q_arr[t], [0.0]])
+        q_aug = np.concatenate([[0.0], q_arr[t + 1], [0.0]])
         laplacian = q_aug[:-2] - 2.0 * q_aug[1:-1] + q_aug[2:]
         residual = m * ddot_q - kappa * laplacian
         np.testing.assert_allclose(residual, np.zeros(K), atol=1e-10)

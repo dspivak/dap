@@ -104,33 +104,58 @@ def _spark(v):
     return "".join(_BLOCKS[i] for i in idx)
 
 
+def _frames(a, dynamics, height=13):
+    """Render a precomputed chain trajectory to (label, [frame_body, ...])."""
+    T, K = a.shape
+    amax = max(float(np.max(np.abs(a))), 1e-12)
+    mid = height // 2               # axis row
+    up, down = mid, height - 1 - mid  # rows available above / below the axis
+    label = "Phileap (org^(2))" if dynamics == "leapfrog" else f"Phi{dynamics}"
+    bodies = []
+    for t in range(T):
+        grid = [[" "] * K for _ in range(height)]
+        for col in range(K):
+            lv = int(np.clip(round(float(a[t, col]) / amax * mid), -down, up))
+            grid[mid - lv][col] = "●"
+        for col in range(K):  # baseline axis
+            if grid[mid][col] == " ":
+                grid[mid][col] = "·"
+        bodies.append("\n".join("".join(row) for row in grid))
+    return label, bodies
+
+
 def _animate(a, dynamics, height=13, fps=18):
     """Play a precomputed chain trajectory as a terminal animation (Ctrl-C to stop)."""
     import sys
     import time
 
-    T, K = a.shape
-    amax = max(float(np.max(np.abs(a))), 1e-12)
-    mid = height // 2
-    label = "Phileap (org^(2))" if dynamics == "leapfrog" else f"Phi{dynamics}"
+    T = a.shape[0]
+    label, bodies = _frames(a, dynamics, height)
     try:
-        for t in range(T):
-            grid = [[" "] * K for _ in range(height)]
-            for col in range(K):
-                lv = int(np.clip(round(float(a[t, col]) / amax * mid), -mid, mid))
-                grid[mid - lv][col] = "●"
-            for col in range(K):  # baseline axis
-                if grid[mid][col] == " ":
-                    grid[mid][col] = "·"
-            body = "\n".join("".join(row) for row in grid)
+        for t, body in enumerate(bodies):
             sys.stdout.write("\033[H\033[2J")  # cursor home + clear screen
-            sys.stdout.write(f"  {label}   wave on {K} particles   t = {t:>4}/{T - 1}   (Ctrl-C to stop)\n\n")
+            sys.stdout.write(f"  {label}   wave on {a.shape[1]} particles   t = {t:>4}/{T - 1}   (Ctrl-C to stop)\n\n")
             sys.stdout.write(body + "\n")
             sys.stdout.flush()
             time.sleep(1.0 / fps)
     except KeyboardInterrupt:
         pass
     sys.stdout.write("\n")
+
+
+def _save_animation(a, dynamics, path, height=13):
+    """Write every animation frame to a text file, one labeled block per frame."""
+    import os
+
+    T, K = a.shape
+    if os.path.isdir(path):  # a bare directory -> drop a default filename inside it
+        path = os.path.join(path, f"dap_{dynamics}_K{K}.txt")
+    label, bodies = _frames(a, dynamics, height)
+    with open(path, "w") as fh:
+        for t, body in enumerate(bodies):
+            fh.write(f"  {label}   wave on {K} particles   t = {t:>4}/{T - 1}\n\n")
+            fh.write(body + "\n\n")
+    print(f"  saved {T} frames to {path}")
 
 
 def _vec(v):
@@ -225,11 +250,10 @@ def _chain_trajectory(dynamics, K, m, kappa, q0, steps):
 
     O = Phiphase(arr) if dynamics == "phase" else Phiconf(arr)
     state = (q0, jnp.zeros(K)) if dynamics == "phase" else q0
+    bdy = lambda op: (kappa * op[0], jnp.array([0.0]))  # pinned ends, from emitted q_K (presented)
     traj = [np.asarray(q0)]
     for _ in range(steps):
-        q = state[0] if dynamics == "phase" else state
-        in_dir = (jnp.array([kappa * float(q[K - 1])]), jnp.array([0.0]))  # pinned ends
-        _, _, state = O.with_state(state).run_one(_IN_POS_CLOSED, lambda _o, d=in_dir: d)
+        _, _, state = O.with_state(state).run_one(_IN_POS_CLOSED, bdy)
         traj.append(np.asarray(state[0] if dynamics == "phase" else state))
     return np.stack(traj)
 
@@ -240,6 +264,17 @@ def run_chain(dynamics, K, m, kappa, init_kind, steps, animate=False):
 
     if animate:
         _animate(a, dynamics)
+        while ask("watch again? (y/n)", "n", parse=str.lower, choices={"y", "n"}) == "y":
+            _animate(a, dynamics)
+        while True:
+            path = ask("save frames to file? (path, or blank to skip)", "", parse=str.strip)
+            if not path:
+                break
+            try:
+                _save_animation(a, dynamics, path)
+                break
+            except OSError as exc:
+                print(f"  ? could not write {path!r}: {exc}")
 
     space = "T*R^%d" % K if dynamics in ("phase", "leapfrog") else "R^%d" % K
     name = "Phileap (org^(2))" if dynamics == "leapfrog" else f"Phi{dynamics}"
@@ -254,10 +289,11 @@ def run_chain(dynamics, K, m, kappa, init_kind, steps, animate=False):
         print(f"  centered WAVE recurrence  m*q'' = kappa*Lap(center) :  residual {res:.1e}")
         print(f"  peak |q|: {peaks[0]:.2f} -> {peaks.max():.2f}  (bounded -- symplectic, stays stable)")
     elif dynamics == "phase":
-        res = max((float(np.abs(m * (a[t + 2] - 2 * a[t + 1] + a[t]) - kappa * _laplacian_pinned(a[t])).max())
+        res = max((float(np.abs(m * (a[t + 2] - 2 * a[t + 1] + a[t]) - kappa * _laplacian_pinned(a[t + 1])).max())
                    for t in range(len(a) - 2)), default=0.0)
-        print(f"  discrete WAVE equation  m*q'' = kappa*Lap :  residual {res:.1e}  (exact identity)")
-        print(f"  peak |q|: {peaks[0]:.2f} -> {peaks[-1]:.1e}  (grows: explicit Euler isn't symplectic)")
+        print(f"  centered WAVE recurrence  m*q'' = kappa*Lap(center) :  residual {res:.1e}  (exact identity)")
+        bounded = peaks.max() < 10.0 * max(float(peaks[0]), 1e-12)
+        print(f"  peak |q|: {peaks[0]:.2f} -> {peaks.max():.2f}  ({'bounded -- symplectic' if bounded else 'growing (step too large)'})")
     else:
         res = max((float(np.abs(m * (a[t + 1] - a[t]) - kappa * _laplacian_pinned(a[t])).max())
                    for t in range(len(a) - 1)), default=0.0)
@@ -304,10 +340,11 @@ def run_graph(dynamics, V, edges, m, kappa, init_kind, steps):
     print(f"  q({steps:>3}) = {_vec(a[-1])}")
     peaks = np.abs(a).max(axis=1)
     if dynamics == "phase":
-        res = max(float(np.abs(m * (a[t + 2] - 2 * a[t + 1] + a[t]) + kappa * (L @ a[t])).max())
+        res = max(float(np.abs(m * (a[t + 2] - 2 * a[t + 1] + a[t]) + kappa * (L @ a[t + 1])).max())
                   for t in range(len(a) - 2))
-        print(f"  graph WAVE equation  m*q'' = -kappa*L q :  residual {res:.1e}  (exact identity)")
-        print(f"  peak |q|: {peaks[0]:.2f} -> {peaks[-1]:.1e}  (grows: explicit Euler isn't symplectic -- exact recurrence, not a stable run)")
+        print(f"  graph WAVE equation  m*q'' = -kappa*L q(center) :  residual {res:.1e}  (exact identity)")
+        bounded = peaks.max() < 10.0 * max(float(peaks[0]), 1e-12)
+        print(f"  peak |q|: {peaks[0]:.2f} -> {peaks.max():.2f}  ({'bounded -- symplectic' if bounded else 'growing (step too large)'})")
     else:
         res = max(float(np.abs(m * (a[t + 1] - a[t]) + kappa * (L @ a[t])).max())
                   for t in range(len(a) - 1))
@@ -343,7 +380,7 @@ def run_gd(in_dim, out_dim, eta, ndata, steps):
 def main():
     print("dynamic-algebra-potentials: build your own arrangement\n")
     try:
-        dynamics = ask("dynamics (phase=Hamilton/Euler, conf=descent, leapfrog=stable wave)", "phase",
+        dynamics = ask("dynamics (phase=symplectic Hamilton, conf=descent, leapfrog=higher-order)", "phase",
                        parse=str.lower, choices={"phase", "conf", "leapfrog"})
         print("system?\n  1) chain of harmonic particles  (wave / heat)"
               "\n  2) graph of harmonic particles  (graph Laplacian)"
@@ -361,7 +398,7 @@ def main():
             init = ask("initial displacement (random / zeros / sine [n] / bump / seed)", "random",
                        parse=parse_init)
             steps = ask("steps", 60, int)
-            animate = ask("animate? (y/n)", "n", parse=str.lower, choices={"y", "n"}) == "y"
+            animate = ask("animate? (y/n)", "y", parse=str.lower, choices={"y", "n"}) == "y"
             run_chain(dynamics, K, m, kappa, init, steps, animate)
         elif system == 2:
             V, edges = ask("graph ('path N' / 'ring N' / 'complete N' / 'i-j i-j ...')",

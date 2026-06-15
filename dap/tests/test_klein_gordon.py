@@ -40,16 +40,17 @@ def _kg_particle(m: float, kappa: float, m0: float) -> SmoothArrangement:
 def _kg_composite_final(q, p, q_prev_extern, xi_N_extern, m, kappa, m0):
     """Reference for the KG analogue of eqn.potlens_composite_final (on-site -m_0^2 q_i)."""
     K = q.shape[0]
-    q_new = q + p / m
+    qt = q + p / m  # presented positions q~ (forces are evaluated here)
+    q_new = qt
     p_new = []
     for i in range(K):
         if i < K - 1:
-            q_prev = q_prev_extern if i == 0 else q[i - 1]
-            q_next = q[i + 1]
-            p_i_new = p[i] + kappa * (q_prev + q_next - 2.0 * q[i]) - (m0 * m0) * q[i]
+            q_prev = q_prev_extern if i == 0 else qt[i - 1]
+            q_next = qt[i + 1]
+            p_i_new = p[i] + kappa * (q_prev + q_next - 2.0 * qt[i]) - (m0 * m0) * qt[i]
         else:
-            q_prev = q[i - 1] if K > 1 else q_prev_extern
-            p_i_new = p[i] + kappa * (q_prev - q[i]) - xi_N_extern - (m0 * m0) * q[i]
+            q_prev = qt[i - 1] if K > 1 else q_prev_extern
+            p_i_new = p[i] + kappa * (q_prev - qt[i]) - xi_N_extern - (m0 * m0) * qt[i]
         p_new.append(p_i_new)
     return q_new, jnp.stack(p_new)
 
@@ -57,12 +58,12 @@ def _kg_composite_final(q, p, q_prev_extern, xi_N_extern, m, kappa, m0):
 _IN_POS = (jnp.zeros(0), (jnp.zeros((0, 0)), jnp.zeros(0)))
 
 
-def _step_pinned(O, state, kappa):
-    """One pinned-end step: q_prev = 0, xi_N = kappa * q_K (so q_{K+1} = 0)."""
-    q, _ = state
+def _step_pinned(O, state, kappa, m):
+    """One pinned-end step: q_prev = 0, xi_N = kappa * q~_K (presented), q~_{K+1} = 0."""
+    q, p = state
     K = q.shape[0]
     q_prev = jnp.array([0.0])
-    xi_N = jnp.array([kappa * float(q[K - 1])])
+    xi_N = jnp.array([kappa * float(q[K - 1] + p[K - 1] / m)])
     _, _, new_state = O.with_state(state).run_one(_IN_POS, lambda _o: (xi_N, q_prev))
     return new_state
 
@@ -99,15 +100,15 @@ def test_kg_recurrence():
     state = (q0, jnp.zeros(K))
     q_traj = [q0]
     for _ in range(T + 2):
-        state = _step_pinned(O, state, kappa)
+        state = _step_pinned(O, state, kappa, m)
         q_traj.append(state[0])
 
     q_arr = np.stack([np.asarray(q) for q in q_traj], axis=0)
     for t in range(T):
         ddot_q = q_arr[t + 2] - 2.0 * q_arr[t + 1] + q_arr[t]
-        q_aug = np.concatenate([[0.0], q_arr[t], [0.0]])
+        q_aug = np.concatenate([[0.0], q_arr[t + 1], [0.0]])
         laplacian = q_aug[:-2] - 2.0 * q_aug[1:-1] + q_aug[2:]
-        residual = m * ddot_q - kappa * laplacian + (m0 * m0) * q_arr[t]
+        residual = m * ddot_q - kappa * laplacian + (m0 * m0) * q_arr[t + 1]
         np.testing.assert_allclose(residual, np.zeros(K), atol=1e-10)
 
 
@@ -124,7 +125,7 @@ def test_kg_dispersion():
         state = (q0, jnp.zeros(K))
         q_traj = [q0]
         for _ in range(2):
-            state = _step_pinned(O, state, kappa)
+            state = _step_pinned(O, state, kappa, m)
             q_traj.append(state[0])
         q_arr = np.stack([np.asarray(q) for q in q_traj], axis=0)
         ddot_q = q_arr[2] - 2.0 * q_arr[1] + q_arr[0]
@@ -133,17 +134,21 @@ def test_kg_dispersion():
 
 
 @pytest.mark.skipif(not os.environ.get("RUN_SLOW"),
-                    reason="long-horizon divergence diagnostic; set RUN_SLOW=1 to enable")
-def test_kg_long_horizon_divergence():
-    """Document the explicit-Euler instability (rmk.euler_energy): peak |q| grows."""
-    K, T = 5, 200
+                    reason="long-horizon stability diagnostic; set RUN_SLOW=1 to enable")
+def test_kg_long_horizon_bounded():
+    """The phase integrator is symplectic (presented-position readout), so over a
+    long horizon the amplitude stays bounded rather than diverging."""
+    K, T = 5, 2000
     m, kappa, m0 = 1.5, 0.9, 0.3
     composite = compose_chain([_kg_particle(m, kappa, m0)] * K)
     O = Phiphase(composite)
 
     rng = np.random.default_rng(20260508)
-    state = (jnp.asarray(1e-3 * rng.standard_normal(K)), jnp.zeros(K))
-    peak0 = float(np.max(np.abs(np.asarray(state[0]))))
+    q0 = jnp.asarray(1e-3 * rng.standard_normal(K))
+    peak0 = float(np.max(np.abs(np.asarray(q0))))
+    state = (q0, jnp.zeros(K))
+    peak = peak0
     for _ in range(T):
-        state = _step_pinned(O, state, kappa)
-    assert float(np.max(np.abs(np.asarray(state[0])))) > 10 * peak0
+        state = _step_pinned(O, state, kappa, m)
+        peak = max(peak, float(np.max(np.abs(np.asarray(state[0])))))
+    assert peak < 50.0 * peak0

@@ -34,14 +34,15 @@ def test_cot_map_pullback():
 
 
 def test_phase_single_particle_update():
-    """eqn.state_update: (q, p) -> (q + p/m, p - xi_Q), xi_Q = xi_N + kappa(q - q_prev)."""
+    """eqn.phase_update: (q,p) -> (q~, p - xi_Q), q~ = q + p/m, xi_Q = xi_N + kappa(q~ - q_prev)."""
     m, kappa = 2.0, 3.0
     O = Phiphase(_harmonic(m, kappa))
     q0, p0 = jnp.array([0.7]), jnp.array([1.1])
     xi_N, q_prev = jnp.array([0.4]), jnp.array([0.55])
+    qt = q0 + p0 / m  # presented position; forces are evaluated here
     _, _, (new_q, new_p) = O.with_state((q0, p0)).run_one(_IN_POS, lambda _o: (xi_N, q_prev))
-    np.testing.assert_allclose(new_q, q0 + p0 / m, atol=1e-10)
-    np.testing.assert_allclose(new_p, p0 - xi_N + kappa * (q_prev - q0), atol=1e-10)
+    np.testing.assert_allclose(new_q, qt, atol=1e-10)
+    np.testing.assert_allclose(new_p, p0 - xi_N + kappa * (q_prev - qt), atol=1e-10)
 
 
 def test_conf_single_particle_descent():
@@ -55,13 +56,16 @@ def test_conf_single_particle_descent():
 
 
 def test_conf_phase_share_readout():
-    """Paper line 2894: Phiconf and Phiphase share the readout and returned direction."""
+    """Phiconf and Phiphase share the readout *formulas*; Phiphase just evaluates
+    them at the presented position q~ = q + sharp(p) (sec.phase_coalgebra)."""
     m, kappa = 1.3, 0.8
     P = _harmonic(m, kappa)
     q = jnp.array([0.3])
+    p = jnp.array([0.5])
+    qt = q + p / m  # presented position
     in_dir = (jnp.array([0.1]), jnp.array([0.05]))
-    pc, dc, _ = Phiconf(P).with_state(q).run_one(_IN_POS, lambda _o: in_dir)
-    pp, dp, _ = Phiphase(P).with_state((q, jnp.array([0.5]))).run_one(_IN_POS, lambda _o: in_dir)
+    pc, dc, _ = Phiconf(P).with_state(qt).run_one(_IN_POS, lambda _o: in_dir)
+    pp, dp, _ = Phiphase(P).with_state((q, p)).run_one(_IN_POS, lambda _o: in_dir)
     np.testing.assert_allclose(pc[0], pp[0], atol=1e-10)        # out_n
     np.testing.assert_allclose(pc[1][0], pp[1][0], atol=1e-10)  # A_N of omega_N
     np.testing.assert_allclose(pc[1][1], pp[1][1], atol=1e-10)  # b_N of omega_N

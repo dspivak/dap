@@ -1,10 +1,13 @@
-"""Leapfrog as org^(2): the wave equation that does NOT blow up (rmk.org_N, leapfrog.py).
+"""Leapfrog as a two-stage integrator org^(2) (leapfrog.py; cf. rmk.multistage).
 
-Same harmonic chain as the wave test, but the symplectic two-stage integrator:
-* it is stable where Phiphase (explicit Euler) diverges;
+Same harmonic chain as the wave test, run with the symplectic two-stage
+integrator (velocity Verlet):
 * eliminating momentum gives the centered discrete wave recurrence
       m (q_{n+1} - 2 q_n + q_{n-1}) = kappa * Lap(q_n);   [force at the center]
 * the energy stays in a bounded band (symplectic).
+
+The single-stage phase integrator is itself symplectic now (presented-position
+readout), so it stays bounded too; leapfrog is a higher-order alternative.
 """
 
 import jax.numpy as jnp
@@ -48,8 +51,9 @@ def _energy(q, xi, m, kappa):
     return ke + pe
 
 
-def test_leapfrog_wave_is_stable_where_euler_blows_up():
-    """kappa/m = 0.6 < 1: leapfrog stays bounded; explicit-Euler Phiphase explodes."""
+def test_leapfrog_and_phase_are_both_bounded():
+    """The presented-position readout makes the single-stage phase integrator
+    symplectic, so it stays bounded like leapfrog (kappa/m = 0.6)."""
     K, m, kappa = 5, 1.5, 0.9
     arr = compose_chain([_harmonic(m, kappa)] * K)
     rng = np.random.default_rng(0)
@@ -65,15 +69,16 @@ def test_leapfrog_wave_is_stable_where_euler_blows_up():
         _, _, state = O.with_state(state).run_one(_IN_POS, bdy)
         leap_peak = max(leap_peak, float(np.max(np.abs(np.asarray(state[0])))))
 
-    # explicit-Euler Phiphase: 100 steps, already exploded
+    # single-stage phase: now symplectic, also bounded
     Oe = Phiphase(arr)
     es = (q0, jnp.zeros(K))
-    for _ in range(80):
+    phase_peak = peak0
+    for _ in range(300):
         _, _, es = Oe.with_state(es).run_one(_IN_POS, bdy)
-    euler_peak = float(np.max(np.abs(np.asarray(es[0]))))
+        phase_peak = max(phase_peak, float(np.max(np.abs(np.asarray(es[0])))))
 
-    assert leap_peak < 10.0 * peak0      # bounded
-    assert euler_peak > 1e3 * peak0      # diverged
+    assert leap_peak < 10.0 * peak0
+    assert phase_peak < 10.0 * peak0
 
 
 def test_leapfrog_centered_wave_recurrence():

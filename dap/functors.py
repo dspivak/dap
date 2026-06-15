@@ -95,7 +95,7 @@ def Phi(arr: SmoothArrangement, integrator: Integrator) -> OrgMorphism:
     tgt_p = phi_box_poly(arr.out_dim_N, arr.in_dim_N)
 
     def step(state):
-        q = integrator.position(state)
+        q = integrator.position(Q, state)
         position_action, direction_action = interp(q)
 
         def act_positions(in_pos):
