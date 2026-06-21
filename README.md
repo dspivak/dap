@@ -36,13 +36,39 @@ After `pip install -e .` the `dap` and `dap-demo` commands are on your PATH (no
 | `arrangement.py` | a smooth adaptive arrangement (a morphism of `sarr`) |
 | `polynomial.py`, `org.py` | polynomials and `[p,q]`-coalgebras (Moore form) |
 | `interpretation.py` | the shared, integrator-free polynomial interpretation |
-| `integrator.py` | configuration, phase, and two-stage (`Integrator2`) integrators |
-| `functors.py` | `Phiconf`, `Phiphase` |
+| `integrator.py` | configuration and phase integrators, and the two-stage `Integrator2` |
+| `functors.py` | the dynamics functors `Phiconf`, `Phiphase` |
 | `org2.py` | general two-stage coalgebras `[p,q]^{∘2}` (`org^(2)`) + composition |
 | `leapfrog.py` | leapfrog as a two-stage integrator → `org^(2)` (higher-order symplectic) |
-| `wiring.py` | compose boxes (chains, graphs, tensor) |
+| `wiring.py` | compose boxes in `sarr` (chains, graphs, tensor) |
 | `learning.py` | gradient descent with backpropagation |
-| `demo.py`, `build.py` | run the examples / build your own |
+| `demo.py`, `build.py` | run the worked examples / build your own |
+
+These modules implement the paper's two chapters. The worked examples of the
+paper's final section each have a test in `dap/tests` checking it reproduces the
+paper's recurrence: Newton's method and gradient descent (`Phiconf`,
+`sec.newton_warmup`/`sec.dl_warmup`), the wave equation (`Phiphase`,
+`sec.wave_equation`, computed two ways to exhibit functoriality), and the graph
+Laplacian (`compose_graph`, the prism wiring of `sec.graph_laplacian`) — plus the
+heat equation and leapfrog.
+
+## Extensions (beyond the paper)
+
+Three further constructions **reuse** the functorial core above but add content
+that is *not* part of the paper's formal development. They are toy-scale
+demonstrations that the primitives compose — not implementations of paper results,
+and not claims to beat dedicated tools. `dap-demo` prints them under a separate
+**“Extensions”** heading.
+
+| construction | what it reuses (paper) | what it adds (not in the paper) |
+|---|---|---|
+| `Phidamped` (`integrator.py`, `functors.py`) | the phase integrator | a dissipation 1-form `ζ(q,ξ)=(ξ,0)` giving heavy-ball momentum; the paper's `ex.dissipation_one_form` is **commented out** |
+| `system_id.py` | `Phiphase` + the learner of `sec.dl_warmup` | a nonlinear pendulum, a tanh-MLP predictor, libration sampling — identifying a flow map |
+| `pinn.py` | `Phiconf` + the learner of `sec.dl_warmup` | a deep-Ritz Dirichlet energy and a coordinate MLP — a physics-informed net for 1D Poisson |
+
+The integrator alone turns one convex arrangement into gradient descent,
+conservative oscillation, or heavy-ball momentum (`Phiconf`/`Phiphase`/`Phidamped`)
+— the same selection that distinguishes wave from heat.
 
 ## Build your own
 
@@ -89,7 +115,8 @@ prompt like:
 > a (forward, backward) pair, and compose them into the dynamics functor; carry
 > coalgebras in Moore form (a state plus a step function), never materializing the
 > internal hom. Provide two integrators — configuration (descent) and phase
-> (Hamiltonian). Also build the two-stage semantics org^(2): a [p,q]^{∘2}-
+> (Hamiltonian). Store each covector field as a callable `ω: ℝᵈ → ℝᵈ` evaluated
+> exactly (no affine/quadratic approximation). Also build the two-stage semantics org^(2): a [p,q]^{∘2}-
 > coalgebra is two emit/receive rounds per macro-tick, where the first round lands
 > in an inner one-stage coalgebra (the substitution [p,q] ◁ [p,q]) rather than a
 > new state, with composition (parallel, then_static). A two-stage integrator then
@@ -97,7 +124,7 @@ prompt like:
 > not hardcoded. Then build the worked examples — Newton's method, gradient descent
 > with backpropagation, the wave equation (symplectic phase, plus leapfrog), the heat
 > equation — and check that each reproduces the paper's recurrences. Use ℝᵈ for
-> manifolds, store covector fields as affine (A, b) pairs, and use JAX for autodiff.
+> manifolds and JAX for autodiff.
 
 Spelled out, the recipe is:
 
@@ -118,8 +145,9 @@ Spelled out, the recipe is:
 8. Instantiate the worked examples and check they reproduce the paper's recurrences.
 
 Four representation choices the mathematics does not dictate, which this code
-makes explicit: manifolds = ℝᵈ; covector fields stored as affine `(A, b)` pairs;
-coalgebras in Moore form; autodiff backend = JAX.
+makes explicit: manifolds = ℝᵈ; covector fields stored as callables `ω: ℝᵈ → ℝᵈ`
+(the exact field, not an affine approximation); coalgebras in Moore form; autodiff
+backend = JAX.
 
 ## Runnable "for real"?
 

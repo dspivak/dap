@@ -8,6 +8,7 @@ two-round execution composes correctly under `parallel` and `then_static`.
 import jax.numpy as jnp
 import numpy as np
 
+from dap.interpretation import trivial_omega
 from dap.arrangement import SmoothArrangement
 from dap.functors import Phiphase
 from dap.integrator import Integrator2
@@ -28,7 +29,7 @@ def _oscillator(omega2):
     )
 
 
-_IN_POS0 = (jnp.zeros(0), (jnp.zeros((0, 0)), jnp.zeros(0)))  # closed position
+_IN_POS0 = (jnp.zeros(0), trivial_omega(0))  # closed position
 _IN_DIR0 = (jnp.zeros(0), jnp.zeros(0))                        # closed direction
 
 

@@ -30,7 +30,7 @@ from jax import Array
 
 from .arrangement import SmoothArrangement
 from .functors import Phiconf
-from .interpretation import smooth_interpretation
+from .interpretation import smooth_interpretation, trivial_omega
 from .rvect import ReactiveVectorSpace
 
 
@@ -66,9 +66,9 @@ def parameterized_map(
     )
 
 
-def _trivial_omega(d: int) -> Tuple[Array, Array]:
-    """The (trivial) affine covector field on ``R^d``; for the network ``d = 0``."""
-    return (jnp.zeros((d, d)), jnp.zeros(d))
+def _trivial_omega(d: int):
+    """The (trivial) zero covector field on ``R^d``; for the network ``d = 0``."""
+    return trivial_omega(d)
 
 
 def forward_backward(

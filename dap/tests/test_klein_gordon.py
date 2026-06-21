@@ -20,6 +20,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
+from dap.interpretation import trivial_omega
 from dap.arrangement import SmoothArrangement
 from dap.functors import Phiphase
 from dap.rvect import diagonal
@@ -55,7 +56,7 @@ def _kg_composite_final(q, p, q_prev_extern, xi_N_extern, m, kappa, m0):
     return q_new, jnp.stack(p_new)
 
 
-_IN_POS = (jnp.zeros(0), (jnp.zeros((0, 0)), jnp.zeros(0)))
+_IN_POS = (jnp.zeros(0), trivial_omega(0))
 
 
 def _step_pinned(O, state, kappa, m):

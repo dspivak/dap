@@ -123,6 +123,56 @@ class OrgMorphism:
             step=new_step,
         )
 
+    def then(self, other: "OrgMorphism") -> "OrgMorphism":
+        """Sequential composition in pc: ``self : p -> q`` then ``other : q -> r``,
+        giving ``p -> r`` (sec.org). State spaces multiply.
+
+        Forward, a ``p``-position runs through ``self`` then ``other`` to an
+        ``r``-position; backward, an ``r``-direction runs through ``other`` then
+        ``self`` to a ``p``-direction, updating both states. This is the general
+        ``pc`` composition on which the functoriality of ``Phi`` rests (the
+        second-pass audit, sec.spring_second_pass); ``then_static`` is the special
+        case where ``other`` carries a single state. Requires ``self.tgt_poly``
+        and ``other.src_poly`` to agree.
+        """
+
+        from .polynomial import PolyMap as _PM
+
+        def new_step(s):
+            s_self, s_other = s
+            act_self, fiber_self = self.step(s_self)
+            act_other, fiber_other = other.step(s_other)
+
+            composed_act = _PM(
+                src=act_self.src,
+                tgt=act_other.tgt,
+                position_action=lambda i: act_other.on_position(act_self.on_position(i)),
+                direction_action=lambda i, d_r: act_self.on_direction(
+                    i, act_other.on_direction(act_self.on_position(i), d_r)
+                ),
+                label=f"{act_self.label};{act_other.label}",
+            )
+
+            def fiber(i):                       # i: p-position
+                j, at_self = fiber_self(i)      # j: q-position
+                k, at_other = fiber_other(j)    # k: r-position
+
+                def at_pos(d_r):                # d_r: r-direction at k
+                    d_q, ns_other = at_other(d_r)   # d_q: q-direction at j
+                    d_p, ns_self = at_self(d_q)     # d_p: p-direction at i
+                    return d_p, (ns_self, ns_other)
+
+                return k, at_pos
+
+            return composed_act, fiber
+
+        return OrgMorphism(
+            src_poly=self.src_poly,
+            tgt_poly=other.tgt_poly,
+            state=(self.state, other.state),
+            step=new_step,
+        )
+
     def parallel(self, other: "OrgMorphism") -> "OrgMorphism":
         """Monoidal parallel composition (sec.org), state-spaces multiply."""
 

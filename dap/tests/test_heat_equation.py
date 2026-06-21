@@ -16,6 +16,7 @@ pinned equilibrium q = 0 (contrast rmk.euler_energy).
 import jax.numpy as jnp
 import numpy as np
 
+from dap.interpretation import trivial_omega
 from dap.arrangement import SmoothArrangement
 from dap.functors import Phiconf
 from dap.rvect import diagonal
@@ -33,7 +34,7 @@ def _harmonic_particle(m: float, kappa: float) -> SmoothArrangement:
     )
 
 
-_IN_POS = (jnp.zeros(0), (jnp.zeros((0, 0)), jnp.zeros(0)))
+_IN_POS = (jnp.zeros(0), trivial_omega(0))
 
 
 def _step_pinned(O, q, kappa):

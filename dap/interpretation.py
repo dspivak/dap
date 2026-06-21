@@ -20,8 +20,11 @@ Given the parameter position ``q``, the interpretation provides:
   ``xi_Q in Q^*`` is the parameter covector the integrator consumes, ``xi_M``
   is returned to the source interface.
 
-Covector fields are represented affinely as ``(A, b)`` pairs, ``omega(z) = A z + b``
-(exact for the affine/quadratic running examples).
+A covector field ``omega in Omega(M)`` (eqn.Phi_on_obs) is represented as the
+actual smooth map ``omega : M -> M^*`` (a callable), so the interpretation is
+exact for *every* smooth arrangement, not only the affine/quadratic ones -- there
+is no reconstruction from value-and-Jacobian-at-zero. ``trivial_omega(d)`` is the
+zero field on ``R^d``, used wherever an interface's input side is trivial.
 """
 
 from __future__ import annotations
@@ -35,40 +38,40 @@ from jax import Array
 from .arrangement import SmoothArrangement
 
 
+def trivial_omega(d: int) -> Callable[[Array], Array]:
+    """The zero covector field on ``R^d`` (the trivial 1-form ``z |-> 0``)."""
+    return lambda z: jnp.zeros(d)
+
+
 def smooth_interpretation(
     arr: SmoothArrangement,
 ) -> Callable[[Array], Tuple[Callable, Callable]]:
     """Return ``q |-> (position_action, direction_action)`` for ``Phi'_interpsm(arr)``."""
 
     out_f, in_f, U = arr.out_f, arr.in_f, arr.U
-    d_in_N = arr.in_dim_N
 
     def at_position(q: Array):
         # ---- readout: (out_m, omega_M) |-> (out_n, omega_N) ----
         def position_action(out_m: Array, omega_M):
-            A_M, b_M = omega_M
             out_n = out_f(q, out_m)  # eqn.outpn
 
-            # omega_N(in_n) = (in_f(q, out_m, -))^* omega_M + d(U(q, out_m, -))   (eqn.omegaprime)
-            def omega_N_at(in_n: Array) -> Array:
+            # omega_N(in_n) = (in_f(q, out_m, -))^* omega_M + d(U(q, out_m, -))   (eqn.omegaprime).
+            # Returned AS THE FIELD (a callable), exact for any smooth U / in_f.
+            def omega_N(in_n: Array) -> Array:
                 in_f_qm = lambda y: in_f(q, out_m, y)
                 in_m_at = in_f_qm(in_n)
-                omega_M_val = A_M @ in_m_at + b_M
+                omega_M_val = omega_M(in_m_at)
                 _, vjp_in_f = jax.vjp(in_f_qm, in_n)
                 (pull_back,) = vjp_in_f(omega_M_val)
                 dU_at = jax.grad(lambda y: U(q, out_m, y))(in_n)
                 return pull_back + dU_at
 
-            zero_in_n = jnp.zeros(d_in_N)
-            b_N = omega_N_at(zero_in_n)
-            A_N = jax.jacfwd(omega_N_at)(zero_in_n)
-            return out_n, (A_N, b_N)
+            return out_n, omega_N
 
         # ---- backward: (out_m, omega_M, xi_N, in_n) |-> (xi_Q, xi_M, in_m) ----
         def direction_action(out_m: Array, omega_M, xi_N: Array, in_n: Array):
-            A_M, b_M = omega_M
             in_m = in_f(q, out_m, in_n)  # eqn.inptm
-            omega_M_val = A_M @ in_m + b_M
+            omega_M_val = omega_M(in_m)  # the covector field evaluated at in_m
 
             # The three pullbacks summed in eqn.bigtheta.
             _, vjp_out_f = jax.vjp(lambda qq, mm: out_f(qq, mm), q, out_m)

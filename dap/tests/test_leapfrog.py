@@ -13,6 +13,7 @@ readout), so it stays bounded too; leapfrog is a higher-order alternative.
 import jax.numpy as jnp
 import numpy as np
 
+from dap.interpretation import trivial_omega
 from dap.arrangement import SmoothArrangement
 from dap.functors import Phiphase
 from dap.leapfrog import Phileap
@@ -30,7 +31,7 @@ def _harmonic(m, kappa):
     )
 
 
-_IN_POS = (jnp.zeros(0), (jnp.zeros((0, 0)), jnp.zeros(0)))
+_IN_POS = (jnp.zeros(0), trivial_omega(0))
 
 
 def _boundary(kappa):

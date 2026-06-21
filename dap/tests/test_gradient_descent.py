@@ -10,6 +10,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from dap.interpretation import trivial_omega
 from dap.functors import Phiconf
 from dap.learning import (
     forward_backward,
@@ -73,7 +74,7 @@ def test_phiconf_step_is_gradient_descent():
     x = jnp.asarray(rng.standard_normal(3))
     lam = jnp.asarray(rng.standard_normal(2))
 
-    in_pos = (x, (jnp.zeros((0, 0)), jnp.zeros(0)))
+    in_pos = (x, trivial_omega(0))
     _, _, new_q = O.with_state(q).run_one(
         in_pos, lambda op: (squared_error_grad(op[0], lam), jnp.zeros(0))
     )

@@ -22,13 +22,14 @@ jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 import numpy as np
 
+from dap.interpretation import trivial_omega
 from dap.arrangement import SmoothArrangement
 from dap.functors import Phiconf, Phiphase
 from dap.rvect import diagonal, euclidean
-from dap.wiring import compose_chain
+from dap.wiring import compose_chain, compose_graph
 from dap.learning import parameterized_map, train, squared_error
 
-_IN_POS_CLOSED = (jnp.zeros(0), (jnp.zeros((0, 0)), jnp.zeros(0)))
+_IN_POS_CLOSED = (jnp.zeros(0), trivial_omega(0))
 _IN_DIR_CLOSED = (jnp.zeros(0), jnp.zeros(0))
 
 
@@ -178,30 +179,6 @@ def harmonic_particle(m, kappa):
     )
 
 
-def harmonic_graph(num_vertices, edges, m, kappa):
-    """A closed arrangement: one harmonic particle per vertex, one spring per edge.
-
-    U(q) = sum_{(i,j) in E} (kappa/2)(q_i - q_j)^2, so dU = kappa * L q with L the
-    graph Laplacian (sec.graph_laplacian). Phiphase gives the graph wave equation,
-    Phiconf the graph heat equation.
-    """
-    Q = diagonal(jnp.full((num_vertices,), 1.0 / m))
-
-    def U(q, m_out, n_in):
-        total = jnp.array(0.0)
-        for (i, j) in edges:
-            total = total + 0.5 * kappa * (q[i] - q[j]) ** 2
-        return total
-
-    return SmoothArrangement(
-        Q=Q, out_dim_M=0, in_dim_M=0, out_dim_N=0, in_dim_N=0,
-        out_f=lambda q, m_out: jnp.zeros(0),
-        in_f=lambda q, m_out, n_in: jnp.zeros(0),
-        U=U,
-        label=f"graph(V={num_vertices}, E={len(edges)})",
-    )
-
-
 def _graph_laplacian(num_vertices, edges):
     L = np.zeros((num_vertices, num_vertices))
     for (i, j) in edges:
@@ -302,7 +279,7 @@ def run_chain(dynamics, K, m, kappa, init_kind, steps, animate=False):
 
 
 def run_graph(dynamics, V, edges, m, kappa, init_kind, steps):
-    arr = harmonic_graph(V, edges, m, kappa)
+    arr = compose_graph(V, edges, m, kappa)  # wire_G = R^{varphi_G}((Part_v)_v), eqn.graph_wire
     q0 = _initial(V, init_kind)
     L = _graph_laplacian(V, edges)
 

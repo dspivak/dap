@@ -11,6 +11,7 @@ one Newton step for a critical point of ``U``.
 import jax.numpy as jnp
 import numpy as np
 
+from dap.interpretation import trivial_omega
 from dap.arrangement import SmoothArrangement
 from dap.functors import Phiconf
 from dap.rvect import inverse_hessian
@@ -28,7 +29,7 @@ def _scalar(U_scalar, dim):
     )
 
 
-_IN_POS = (jnp.zeros(0), (jnp.zeros((0, 0)), jnp.zeros(0)))
+_IN_POS = (jnp.zeros(0), trivial_omega(0))
 _IN_DIR = (jnp.zeros(0), jnp.zeros(0))
 
 

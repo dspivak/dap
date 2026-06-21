@@ -24,6 +24,7 @@ from .arrangement import SmoothArrangement
 from .integrator import (
     Integrator,
     configuration_integrator,
+    damped_phase_integrator,
     phase_integrator,
 )
 from .interpretation import smooth_interpretation
@@ -147,3 +148,14 @@ def Phiconf(arr: SmoothArrangement) -> OrgMorphism:
 def Phiphase(arr: SmoothArrangement) -> OrgMorphism:
     """Phase-space dynamics ``Phiphase`` (sec.phase_dynamics)."""
     return Phi(arr, phase_integrator())
+
+
+def Phidamped(arr: SmoothArrangement, damping: float = 0.1) -> OrgMorphism:
+    """Damped phase dynamics: heavy-ball *momentum* (damped_phase_integrator).
+
+    EXTENSION (beyond the paper) -- see ``damped_phase_integrator``: its dissipation
+    1-form is commented out in the published paper. The same arrangement read by a
+    phase integrator with friction ``damping``; on a learner this is momentum-based
+    training, converging where the conservative ``Phiphase`` would only oscillate.
+    """
+    return Phi(arr, damped_phase_integrator(damping))

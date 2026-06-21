@@ -15,15 +15,22 @@ from .integrator import (
     Integrator,
     Integrator2,
     configuration_integrator,
+    damped_phase_integrator,
     phase_integrator,
 )
 from .interpretation import smooth_interpretation
-from .functors import Phi, Phiconf, Phiphase, cot_object, cot_map
+from .functors import Phi, Phiconf, Phidamped, Phiphase, cot_object, cot_map
 from .org2 import OrgMorphism2, org2_from_integrator
 from .leapfrog import Phileap, leapfrog_integrator
 from . import functors
 from . import wiring
 from . import learning
+
+# Extensions (beyond the paper): reuse the functorial core above but add content
+# not in the paper's formal development. See the README "Extensions" section and
+# each module's header. ``Phidamped`` / ``damped_phase_integrator`` are extensions too.
+from . import system_id
+from . import pinn
 
 __all__ = [
     "ReactiveVectorSpace",
@@ -36,10 +43,12 @@ __all__ = [
     "Integrator",
     "Integrator2",
     "configuration_integrator",
+    "damped_phase_integrator",
     "phase_integrator",
     "smooth_interpretation",
     "Phi",
     "Phiconf",
+    "Phidamped",
     "Phiphase",
     "Phileap",
     "leapfrog_integrator",
@@ -50,4 +59,7 @@ __all__ = [
     "functors",
     "wiring",
     "learning",
+    # extensions (beyond the paper):
+    "system_id",
+    "pinn",
 ]

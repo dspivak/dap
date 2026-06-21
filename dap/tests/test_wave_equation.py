@@ -11,6 +11,7 @@ References sec.wave_equation of dynamic-algebra-potentials.tex:
 import jax.numpy as jnp
 import numpy as np
 
+from dap.interpretation import trivial_omega
 from dap.arrangement import SmoothArrangement
 from dap.functors import Phiphase
 from dap.rvect import diagonal
@@ -50,7 +51,7 @@ def _composite_final(q, p, q_prev_extern, xi_N_extern, m, kappa):
     return q_new, jnp.stack(p_new)
 
 
-_IN_POS = (jnp.zeros(0), (jnp.zeros((0, 0)), jnp.zeros(0)))
+_IN_POS = (jnp.zeros(0), trivial_omega(0))
 
 
 def test_state_update_matches_composite_final():
@@ -86,9 +87,12 @@ def test_omega_N_is_harmonic_spring_field():
     p = jnp.zeros(K)
     _, fiber = O.step((q, p))
     out_pos, _ = fiber(_IN_POS)
-    out_n, (A_N, b_N) = out_pos
+    out_n, omega_N = out_pos  # omega_N is the covector FIELD (a callable), eqn.omegaprime
     np.testing.assert_allclose(np.asarray(out_n), np.asarray(q[K - 1:K]), atol=1e-10)
-    np.testing.assert_allclose(np.asarray(A_N), np.array([[kappa]]), atol=1e-10)
+    # omega_N(q_0) = -kappa(q_1 - q_0) = kappa q_0 - kappa q_1: value at 0 is b, the 1D slope is A.
+    b_N = omega_N(jnp.zeros(1))
+    A_N = omega_N(jnp.ones(1)) - b_N
+    np.testing.assert_allclose(np.asarray(A_N), np.array([kappa]), atol=1e-10)
     np.testing.assert_allclose(np.asarray(b_N), np.array([-kappa * float(q[0])]), atol=1e-10)
 
 

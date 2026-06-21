@@ -3,6 +3,7 @@
 import jax.numpy as jnp
 import numpy as np
 
+from dap.interpretation import trivial_omega
 from dap.arrangement import SmoothArrangement
 from dap.functors import Phiconf, Phiphase, cot_map
 from dap.rvect import diagonal
@@ -20,7 +21,7 @@ def _harmonic(m, kappa):
     )
 
 
-_IN_POS = (jnp.zeros(0), (jnp.zeros((0, 0)), jnp.zeros(0)))
+_IN_POS = (jnp.zeros(0), trivial_omega(0))
 
 
 def test_cot_map_pullback():
@@ -67,6 +68,6 @@ def test_conf_phase_share_readout():
     pc, dc, _ = Phiconf(P).with_state(qt).run_one(_IN_POS, lambda _o: in_dir)
     pp, dp, _ = Phiphase(P).with_state((q, p)).run_one(_IN_POS, lambda _o: in_dir)
     np.testing.assert_allclose(pc[0], pp[0], atol=1e-10)        # out_n
-    np.testing.assert_allclose(pc[1][0], pp[1][0], atol=1e-10)  # A_N of omega_N
-    np.testing.assert_allclose(pc[1][1], pp[1][1], atol=1e-10)  # b_N of omega_N
+    z = jnp.array([0.42])                                       # probe the covector field
+    np.testing.assert_allclose(pc[1](z), pp[1](z), atol=1e-10)  # omega_N
     np.testing.assert_allclose(dc[0], dp[0], atol=1e-10)        # returned xi_M

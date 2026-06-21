@@ -82,6 +82,42 @@ def phase_integrator() -> Integrator:
     )
 
 
+def damped_phase_integrator(damping: float = 0.0) -> Integrator:
+    """The phase integrator with a *dissipation* 1-form added.
+
+    EXTENSION (beyond the paper): the dissipation 1-form ``ex.dissipation_one_form``
+    is **commented out** in the published paper, so this integrator goes past the
+    paper's formal content. It is a natural variant of ``phase_integrator`` -- the
+    same phase readout plus one friction term -- included to show the integrator
+    alone interpolates between the optimizers. See the README "Extensions" section.
+
+    The phase readout combines the kinetic 1-form ``beta`` with a *dissipation*
+    1-form ``c * zeta``, ``zeta(q, xi) = (xi, 0)`` (a monoidal 1-form by
+    prop.one_forms_vector_space). Fed through the symplectic sharp it adds
+    ``-c * xi`` to the momentum, so the Hamilton step (eqn.phase_update) gains a
+    friction term:
+
+        (q, xi) |-> (q + sharpR_q(xi),  (1 - c) * xi - xi_Q),   xi_Q at q~.
+
+    At ``c = 0`` this is the conservative phase integrator (oscillates forever);
+    at ``0 < c < 1`` it dissipates a fraction ``c`` of the momentum each step --
+    heavy-ball *momentum* that converges; as ``c -> 1`` it collapses toward plain
+    descent (the configuration integrator). The integrator alone interpolates
+    between the optimizers, exactly as it does between wave and heat dynamics.
+    """
+
+    c = float(damping)
+    return Integrator(
+        init=lambda Q: (jnp.zeros(Q.dim), jnp.zeros(Q.dim)),
+        position=lambda Q, s: s[0] + Q.apply_sharp(s[0], s[1]),
+        step=lambda Q, s, xi_Q: (
+            s[0] + Q.apply_sharp(s[0], s[1]),
+            (1.0 - c) * s[1] - xi_Q,
+        ),
+        label=f"damped({c:g})",
+    )
+
+
 @dataclass(frozen=True)
 class Integrator2:
     """A *two-stage* cot-integrator: operationally ``Store∘S ⇒ cot^{◁2}`` (rmk.multistage).
