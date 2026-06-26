@@ -25,6 +25,7 @@ from .integrator import (
     Integrator,
     configuration_integrator,
     damped_phase_integrator,
+    gyro_phase_integrator,
     phase_integrator,
 )
 from .interpretation import smooth_interpretation
@@ -153,9 +154,23 @@ def Phiphase(arr: SmoothArrangement) -> OrgMorphism:
 def Phidamped(arr: SmoothArrangement, damping: float = 0.1) -> OrgMorphism:
     """Damped phase dynamics: heavy-ball *momentum* (damped_phase_integrator).
 
-    EXTENSION (beyond the paper) -- see ``damped_phase_integrator``: its dissipation
-    1-form is commented out in the published paper. The same arrangement read by a
-    phase integrator with friction ``damping``; on a learner this is momentum-based
-    training, converging where the conservative ``Phiphase`` would only oscillate.
+    EXTENSION -- see ``damped_phase_integrator``: it wires the paper's damping 1-form
+    ``ex.damping_one_form`` (present, but "plays no further role" there) into the phase
+    integrator. The same arrangement read by a phase integrator with friction
+    ``damping``; on a learner this is momentum-based training, converging where the
+    conservative ``Phiphase`` would only oscillate.
     """
     return Phi(arr, damped_phase_integrator(damping))
+
+
+def Phigyro(arr: SmoothArrangement, damping: float = 0.0, gamma: float = 0.0, J=None) -> OrgMorphism:
+    """Gyroscopic phase dynamics: phase + damping + a skew (gyroscopic) 1-form.
+
+    EXTENSION (beyond the paper) -- see ``gyro_phase_integrator``. The same
+    arrangement read by a phase integrator carrying, besides the kinetic 1-form,
+    a damping term ``c`` and a velocity-perpendicular gyroscopic term
+    ``gamma * J``. This is the integrator behind the harmonic gyro surrogate
+    (gravity + springs in ``U``, mass in the sharp, damping and precession in the
+    1-form); see ``dap/gyroscope.py``.
+    """
+    return Phi(arr, gyro_phase_integrator(damping, gamma, J))

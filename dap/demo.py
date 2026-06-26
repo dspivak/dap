@@ -146,6 +146,26 @@ def demo_system_id():
     print(f"  system id (pendulum: Phiphase -> net):  one-step error {err:.3f}  vs no-change baseline {base:.3f}")
 
 
+def demo_gyroscope():
+    # A network of 2-D gyros (springs + gravity + damping + gyroscopic precession),
+    # read by Phigyro, trained to classify strokes -- a harmonic surrogate inspired by
+    # Bull & Achour. Here on a fast synthetic 2-class stroke task; PenDigits run below.
+    from dap.gyroscope import make_config, train, accuracy
+
+    rng = np.random.default_rng(1)
+    def synth(n, T=6):
+        y = rng.integers(0, 2, n)
+        x = 0.5 * np.where(y == 0, 1.0, -1.0)[:, None, None] + 0.25 * rng.standard_normal((n, T, 2))
+        return jnp.asarray(x), jnp.asarray(y)
+
+    cfg = make_config(rows=2, cols=3, n_classes=2, settle=6)
+    Xtr, Ytr = synth(400)
+    Xva, Yva = synth(200)
+    _, hist = train(cfg, Xtr, Ytr, Xva, Yva, epochs=15, batch=64, lr=5e-3, verbose=False)
+    print(f"  gyroscope (springs net: Phigyro -> logits):  val_acc {max(h['val_acc'] for h in hist):.3f}  on a 2-class stroke task")
+    print("    (harmonic surrogate inspired by Bull & Achour; `python -m dap.gyroscope` -> ~0.83 at 3x4, ~0.87 at 4x5)")
+
+
 def main():
     print("dynamic-algebra-potentials: worked examples\n")
     print("Phiconf -- descent dynamics:")
@@ -160,6 +180,7 @@ def main():
     demo_optimizers()
     demo_pinn()
     demo_system_id()
+    demo_gyroscope()
 
 
 if __name__ == "__main__":

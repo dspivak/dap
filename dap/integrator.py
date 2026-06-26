@@ -83,15 +83,16 @@ def phase_integrator() -> Integrator:
 
 
 def damped_phase_integrator(damping: float = 0.0) -> Integrator:
-    """The phase integrator with a *dissipation* 1-form added.
+    """The phase integrator with the paper's *damping* 1-form added.
 
-    EXTENSION (beyond the paper): the dissipation 1-form ``ex.dissipation_one_form``
-    is **commented out** in the published paper, so this integrator goes past the
-    paper's formal content. It is a natural variant of ``phase_integrator`` -- the
-    same phase readout plus one friction term -- included to show the integrator
-    alone interpolates between the optimizers. See the README "Extensions" section.
+    The damping 1-form ``ex.damping_one_form`` -- ``zeta(q, xi) = (xi, 0)`` -- is
+    *present* in the paper (where it "plays no further role"); that example already
+    records that for a coefficient ``c in [0,1]`` the scalar multiple ``c*zeta``
+    "removes a fraction c of the momentum at each step". This integrator is that
+    line put to work: the only step beyond the paper's formal development is wiring
+    the 1-form into an integrator to make an optimizer (README "Extensions").
 
-    The phase readout combines the kinetic 1-form ``beta`` with a *dissipation*
+    The phase readout combines the kinetic 1-form ``beta`` with the *damping*
     1-form ``c * zeta``, ``zeta(q, xi) = (xi, 0)`` (a monoidal 1-form by
     prop.one_forms_vector_space). Fed through the symplectic sharp it adds
     ``-c * xi`` to the momentum, so the Hamilton step (eqn.phase_update) gains a
@@ -115,6 +116,64 @@ def damped_phase_integrator(damping: float = 0.0) -> Integrator:
             (1.0 - c) * s[1] - xi_Q,
         ),
         label=f"damped({c:g})",
+    )
+
+
+def gyro_phase_integrator(
+    damping: float = 0.0, gamma: float = 0.0, J=None
+) -> Integrator:
+    """The phase integrator with a *damping* and a *gyroscopic* 1-form added.
+
+    EXTENSION (beyond the paper). Like ``damped_phase_integrator`` this lives in
+    the readout slot ``nu_{sigma^1, omega}`` (sec.phase_integrators), but adds, to
+    the kinetic 1-form ``beta`` and the damping 1-form ``c*zeta``, a third,
+    *skew* 1-form -- the gyroscopic term of a spinning rotor. With a complex
+    structure ``J`` (a block-diagonal 90-degree rotation, one ``[[0,-1],[1,0]]``
+    block per 2-D gyro), define
+
+        omega_gyro(q, xi) = (gamma * J @ sharpR_q(xi),  0) : Q^* (+) Q.
+
+    Fed through the symplectic sharp (which sends ``(a, b) |-> (b, -a)``,
+    eqn.canonical_sharp) it adds ``-gamma * J @ sharpR_q(xi)`` to the momentum: a
+    force perpendicular to the velocity (``(J v) . v = 0``, rmk.symplectic_perpendicular).
+    In continuous time such a skew force does no work -- gyroscopic precession rotates
+    the velocity without changing its length -- and, unlike the potential, it is
+    velocity-dependent, so it cannot be a ``dU``. Beware: this *explicit* discretization
+    of the skew term is not symplectic; it mildly injects energy each step and is meant
+    to be run with the damping ``c`` (as in ``dap/gyroscope.py``), which keeps it
+    bounded. Combined with damping the Hamilton step (eqn.phase_update) becomes
+
+        (q, xi) |-> ( q + sharpR_q(xi),
+                      (1 - c) * xi - xi_Q - gamma * J @ sharpR_q(xi) ),   xi_Q at q~.
+
+    Caveat (why it is beyond the paper): ``omega_gyro`` is a monoidal 1-form only
+    over the subcategory of ``rvect`` whose isomorphisms commute with ``J`` -- the
+    rotor picks out an orientation, breaking the full reactive symmetry the paper's
+    1-forms (``beta``, ``zeta``) enjoy. It is exactly the minimal example that lives
+    in ``rvect`` but outside the *harmonic* (symmetric-sharp) regime of
+    def.arrangement_terminology.
+    """
+
+    # damping ``c`` and gyroscopic ``gamma`` may be traced (they are trainable in
+    # the gyroscope emulation), so we do not coerce them to ``float`` here; only
+    # the *presence* of ``J`` is a static (Python-time) choice.
+    c = damping
+    g = gamma
+    Jm = None if J is None else jnp.asarray(J, float)
+
+    def step(Q: ReactiveVectorSpace, s, xi_Q):
+        q, xi = s
+        v = Q.apply_sharp(q, xi)  # velocity sharpR_q(xi)
+        new_xi = (1.0 - c) * xi - xi_Q
+        if Jm is not None:
+            new_xi = new_xi - g * (Jm @ v)  # gyroscopic precession (skew, no work)
+        return (q + v, new_xi)
+
+    return Integrator(
+        init=lambda Q: (jnp.zeros(Q.dim), jnp.zeros(Q.dim)),
+        position=lambda Q, s: s[0] + Q.apply_sharp(s[0], s[1]),
+        step=step,
+        label="gyro",
     )
 
 

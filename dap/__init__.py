@@ -16,10 +16,11 @@ from .integrator import (
     Integrator2,
     configuration_integrator,
     damped_phase_integrator,
+    gyro_phase_integrator,
     phase_integrator,
 )
 from .interpretation import smooth_interpretation
-from .functors import Phi, Phiconf, Phidamped, Phiphase, cot_object, cot_map
+from .functors import Phi, Phiconf, Phidamped, Phigyro, Phiphase, cot_object, cot_map
 from .org2 import OrgMorphism2, org2_from_integrator
 from .leapfrog import Phileap, leapfrog_integrator
 from . import functors
@@ -31,6 +32,7 @@ from . import learning
 # each module's header. ``Phidamped`` / ``damped_phase_integrator`` are extensions too.
 from . import system_id
 from . import pinn
+from . import gyroscope
 
 __all__ = [
     "ReactiveVectorSpace",
@@ -44,11 +46,13 @@ __all__ = [
     "Integrator2",
     "configuration_integrator",
     "damped_phase_integrator",
+    "gyro_phase_integrator",
     "phase_integrator",
     "smooth_interpretation",
     "Phi",
     "Phiconf",
     "Phidamped",
+    "Phigyro",
     "Phiphase",
     "Phileap",
     "leapfrog_integrator",
@@ -62,4 +66,5 @@ __all__ = [
     # extensions (beyond the paper):
     "system_id",
     "pinn",
+    "gyroscope",
 ]

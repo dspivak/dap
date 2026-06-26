@@ -54,21 +54,41 @@ heat equation and leapfrog.
 
 ## Extensions (beyond the paper)
 
-Three further constructions **reuse** the functorial core above but add content
-that is *not* part of the paper's formal development. They are toy-scale
-demonstrations that the primitives compose — not implementations of paper results,
-and not claims to beat dedicated tools. `dap-demo` prints them under a separate
-**“Extensions”** heading.
+Four further constructions **reuse** the functorial core above but add content
+that is *not* part of the paper's formal development. They demonstrate that the
+primitives compose — toy-scale (`gyroscope.py` is a harmonic surrogate inspired by
+Bull & Achour) — not implementations of paper results, and not claims to beat
+dedicated tools. `dap-demo` prints them under a separate **“Extensions”** heading.
 
 | construction | what it reuses (paper) | what it adds (not in the paper) |
 |---|---|---|
-| `Phidamped` (`integrator.py`, `functors.py`) | the phase integrator | a dissipation 1-form `ζ(q,ξ)=(ξ,0)` giving heavy-ball momentum; the paper's `ex.dissipation_one_form` is **commented out** |
+| `Phidamped` (`integrator.py`, `functors.py`) | the phase integrator + the paper's damping 1-form `ex.damping_one_form` | wiring `c·ζ`, `ζ(q,ξ)=(ξ,0)`, into the integrator as heavy-ball momentum (the paper records `ζ` but it "plays no further role" there) |
 | `system_id.py` | `Phiphase` + the learner of `sec.dl_warmup` | a nonlinear pendulum, a tanh-MLP predictor, libration sampling — identifying a flow map |
 | `pinn.py` | `Phiconf` + the learner of `sec.dl_warmup` | a deep-Ritz Dirichlet energy and a coordinate MLP — a physics-informed net for 1D Poisson |
+| `gyroscope.py` (`Phigyro`) | `Phiphase` + the graph-Laplacian spring potential of `sec.graph_laplacian` (written directly, **not** assembled by the prism wiring) + the learner of `sec.dl_warmup` | 2-D harmonic gyros with on-site gravity, a gyroscopic skew 1-form, and a linear encoder/decoder + Adam — a harmonic surrogate of the Bull & Achour gyroscope digit-classifier |
 
 The integrator alone turns one convex arrangement into gradient descent,
 conservative oscillation, or heavy-ball momentum (`Phiconf`/`Phiphase`/`Phidamped`)
 — the same selection that distinguishes wave from heat.
+
+`gyroscope.py` is a **harmonic surrogate** of the gyroscope-and-springs digit
+classifier of [Bull & Achour, *Machine learning with
+dynamics*](https://unconv.ai/blog/machine-learning-with-dynamics/) (2026). Each
+physical force is mapped to one slot of the framework: gravity and springs in the
+potential `U`, mass in the reactive sharp, damping and gyroscopic precession in the
+phase integrator's 1-form (`Phigyro`), and the input "nudge" through the open port.
+The forward dynamics *is* `Phigyro` of one harmonic arrangement. Training backprops
+through the length-`T` rollout with `jax.grad`; since `cot`'s backward part is
+reverse-mode AD, this realizes the same chain-rule pullbacks that `cot` encodes — an
+AD-equivalence, not a literal `OrgMorphism.then` composition. On UCI PenDigits
+(`python -m dap.gyroscope`) the surrogate reaches **~0.83** validation accuracy with a
+3×4 gyro grid and **~0.87** with 4×5; the blog reports 0.834 for its (richer) machine
+(linear baseline 0.562, LSTM 0.896), shown for context — we do **not** claim to
+reproduce that number (different machine, a harmonic approximation, and a simplified
+PenDigits form). The interesting result is the **ablation**: freezing the springs to
+zero collapses it to chance — the blog's "Take 1" failure (no coupling, no
+information flow), here a one-line wiring fact — while the gyroscopic term turns out
+not to be needed for this task.
 
 ## Build your own
 
