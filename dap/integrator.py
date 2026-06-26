@@ -24,7 +24,7 @@ between configuration and phase dynamics lives in ``init``/``position``/``step``
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Tuple
 
 import jax.numpy as jnp
 
@@ -201,3 +201,37 @@ class Integrator2:
     read2: Callable[[ReactiveVectorSpace, Any], Any]
     finish: Callable[[ReactiveVectorSpace, Any, Any, Any], Any]
     label: str = ""
+
+
+@dataclass(frozen=True)
+class IntegratorK:
+    """A *K-stage* cot-integrator: operationally ``Store∘S ⇒ cot^{◁K}`` (rmk.multistage).
+
+    The general ``ell``-stage form the remark proposes (``upd: Store∘S ⇒ p^{◁ell}``
+    with ``p = cot``): ``K`` emit/receive rounds before the macro-state updates. It
+    is ``Integrator2`` (read1/advance/read2/finish) one dimension up -- ``K`` reads
+    and ``K`` advances, the last advance being the ``finish`` that lands in a new
+    macro-state. As callables:
+
+    * ``init(Q)``                  -- the initial macro-state ``s_0``.
+    * ``reads[i](Q, m)``           -- parameter position emitted in round ``i``
+                                      (``m`` is the round-``i`` intermediate, ``m = s_0``
+                                      in round 0).
+    * ``advances[i](Q, m, xi_Q)``  -- consume the round-``i`` covector; return the
+                                      next intermediate. For ``i = K-1`` this is the
+                                      ``finish``: its result is the new macro-state.
+
+    ``orgK.orgK_from_integrator`` turns one of these into an ``org^(K)`` morphism,
+    exactly as ``org2.org2_from_integrator`` does for the two-stage case. The lists
+    ``reads`` and ``advances`` must have equal length ``K >= 1``; ``K = 1`` recovers
+    the single-stage ``Integrator`` (one read, one step).
+    """
+
+    init: Callable[[ReactiveVectorSpace], Any]
+    reads: Tuple[Callable[[ReactiveVectorSpace, Any], Any], ...]
+    advances: Tuple[Callable[[ReactiveVectorSpace, Any, Any], Any], ...]
+    label: str = ""
+
+    @property
+    def K(self) -> int:
+        return len(self.reads)

@@ -30,7 +30,9 @@ from .integrator import (
 )
 from .interpretation import smooth_interpretation
 from .org import OrgMorphism
+from .orgK import OrgMorphismK, orgK_from_integrator
 from .polynomial import Cot, DirichletProduct, PolyMap, Poly
+from .rk4 import rk4_integrator
 from .rvect import SmoothMap
 
 
@@ -174,3 +176,15 @@ def Phigyro(arr: SmoothArrangement, damping: float = 0.0, gamma: float = 0.0, J=
     1-form); see ``dap/gyroscope.py``.
     """
     return Phi(arr, gyro_phase_integrator(damping, gamma, J))
+
+
+def Phirk4(arr: SmoothArrangement, h: float = 0.1) -> OrgMorphismK:
+    """Classical RK4 dynamics of a (closed) arrangement, as an ``org^(4)`` morphism.
+
+    The ``K = 4`` analog of ``Phileap`` (which is ``org^(2)``): the RK4 four-stage
+    integrator (``rk4.rk4_integrator``) pushed through ``orgK.orgK_from_integrator``.
+    It steps the gradient flow ``ẋ = -sharpR_x(dU)`` with classical RK4 (step ``h``),
+    so its global error is ``O(h^4)``. Like ``org^(2)``, whether ``sarr → org^(4)`` is
+    a *functor* (rmk.multistage) is left open; this is the datatype plus an instance.
+    """
+    return orgK_from_integrator(arr, rk4_integrator(h))

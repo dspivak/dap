@@ -36,10 +36,12 @@ After `pip install -e .` the `dap` and `dap-demo` commands are on your PATH (no
 | `arrangement.py` | a smooth adaptive arrangement (a morphism of `sarr`) |
 | `polynomial.py`, `org.py` | polynomials and `[p,q]`-coalgebras (Moore form) |
 | `interpretation.py` | the shared, integrator-free polynomial interpretation |
-| `integrator.py` | configuration and phase integrators, and the two-stage `Integrator2` |
-| `functors.py` | the dynamics functors `Phiconf`, `Phiphase` |
+| `integrator.py` | configuration and phase integrators, the two-stage `Integrator2`, the K-stage `IntegratorK` |
+| `functors.py` | the dynamics functors `Phiconf`, `Phiphase` (and `Phirk4`, RK4 as `org^(4)`) |
 | `org2.py` | general two-stage coalgebras `[p,q]^{∘2}` (`org^(2)`) + composition |
+| `orgK.py` | general K-stage coalgebras `[p,q]^{∘K}` (`org^(K)`) + composition |
 | `leapfrog.py` | leapfrog as a two-stage integrator → `org^(2)` (higher-order symplectic) |
+| `rk4.py` | classical RK4 as a four-stage integrator → `org^(4)` (`Phirk4`; non-symplectic) |
 | `wiring.py` | compose boxes in `sarr` (chains, graphs, tensor) |
 | `learning.py` | gradient descent with backpropagation |
 | `demo.py`, `build.py` | run the worked examples / build your own |
@@ -178,10 +180,16 @@ presented position `q~ = q + sharp(p)` and evaluates the force there, so the ene
 stays bounded — `dap` shows the wave staying stable directly. `leapfrog` (velocity
 Verlet) is a higher-order symplectic alternative that evaluates the force twice per
 step, so it lands in `org^(2)` rather than `org`. `org2.py` builds the general
-two-stage coalgebra `[p,q]^{∘2}` with composition; `leapfrog.py` is one instance of
-it. (Whether `sarr → org^(2)` is a *functor* — cf. rmk.multistage — is left open;
-the code provides the datatype, a leapfrog instance, and composition — tested, not
-a proof.)
+two-stage coalgebra `[p,q]^{∘2}` with composition (`leapfrog.py` is one instance),
+and `orgK.py` generalizes it to the K-fold substitution `[p,q]^{∘K}` — the `ℓ`-round
+coalgebras of `rmk.multistage`. `rk4.py` realizes classical RK4 as one `org^(4)`
+instance: its global error falls like `h⁴` (a test checks the rate against the closed
+form `e^{-At}`), the falsifiable evidence that the four rounds carry the right
+intermediate stages and Butcher weights. RK4 is non-symplectic — fine here; the
+multi-stage construction does not require it. (Whether `sarr → org^(K)` is a
+*functor* — cf. `rmk.multistage` — is left open for every `K`; the code provides the
+datatype, instances at `K = 2` (leapfrog) and `K = 4` (RK4), and composition —
+tested, not a proof.)
 
 ## License
 

@@ -112,6 +112,30 @@ def demo_leapfrog():
     print(f"  wave (leapfrog, org^(2)):   peak |q| {peak0:.2f} -> max {peak:.2f} over 400 steps  (bounded -- stable)")
 
 
+def demo_rk4():
+    # RK4 as one org^(4) instance: four force evaluations per macro-tick. On the
+    # gradient flow qdot = -A q the global error falls like h^4 (4th order).
+    from dap.functors import Phirk4
+    A = np.diag([1.0, 2.0, 5.0])
+    arr = SmoothArrangement(
+        euclidean(3, 1.0), 0, 0, 0, 0,
+        out_f=lambda q, m_out: jnp.zeros(0),
+        in_f=lambda q, m_out, n_in: jnp.zeros(0),
+        U=lambda q, m_out, n_in: 0.5 * q @ (jnp.asarray(A) @ q))
+    x0 = jnp.array([1.0, 1.0, 1.0])
+    exact = np.asarray(jax.scipy.linalg.expm(-A) @ np.asarray(x0))
+    triv = lambda _o: (jnp.zeros(0), jnp.zeros(0))
+
+    def err(N):
+        O, s = Phirk4(arr, 1.0 / N), x0
+        for _ in range(N):
+            _, s = O.with_state(s).run_one(_IN_POS, triv)
+        return float(np.linalg.norm(np.asarray(s) - exact))
+
+    e8, e16 = err(8), err(16)
+    print(f"  rk4 (org^(4)):              error {e8:.1e} -> {e16:.1e} as h halves  (ratio {e8 / e16:.0f} ~ 16, i.e. 4th order)")
+
+
 def demo_optimizers():
     # One convex arrangement, three integrators: the optimizer IS the integrator.
     A = jnp.diag(jnp.array([1.0, 3.0, 9.0]))
@@ -174,8 +198,9 @@ def main():
     demo_heat()
     print("\nPhiphase -- Hamiltonian dynamics (org):")
     demo_wave()
-    print("\nLeapfrog -- symplectic two-stage (org^(2)):")
+    print("\nMulti-stage integrators (org^(K)):")
     demo_leapfrog()
+    demo_rk4()
     print("\nExtensions (beyond the paper; the same pieces, composed):")
     demo_optimizers()
     demo_pinn()
