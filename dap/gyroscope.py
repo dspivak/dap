@@ -76,6 +76,33 @@ def grid_graph(rows: int, cols: int) -> Tuple[List[Tuple[int, int]], List[int], 
     return edges, in_gyros, out_gyros
 
 
+def hex_graph(rows: int, cols: int) -> Tuple[List[Tuple[int, int]], List[int], List[int]]:
+    """A ``rows x cols`` triangular/hex lattice of gyros (up to 6 neighbours interior).
+
+    Axial offset: each ``(i, j)`` bonds east ``(i, j+1)``, south ``(i+1, j)``, and the
+    hex diagonal south-west ``(i+1, j-1)`` (directed, so each undirected bond appears
+    once). As in ``grid_graph`` the input gyros are the left column and the output
+    gyros the right column, so information must cross the lattice -- the coupling the
+    blog found essential. The blog's network is this shape; here at small scale (the
+    goal is the factorization + the springs ablation, not their accuracy number).
+    """
+    def idx(i, j):
+        return i * cols + j
+
+    edges: List[Tuple[int, int]] = []
+    for i in range(rows):
+        for j in range(cols):
+            if j + 1 < cols:
+                edges.append((idx(i, j), idx(i, j + 1)))           # east
+            if i + 1 < rows:
+                edges.append((idx(i, j), idx(i + 1, j)))           # south
+            if i + 1 < rows and j - 1 >= 0:
+                edges.append((idx(i, j), idx(i + 1, j - 1)))       # south-west (hex diagonal)
+    in_gyros = [idx(i, 0) for i in range(rows)]
+    out_gyros = [idx(i, cols - 1) for i in range(rows)]
+    return edges, in_gyros, out_gyros
+
+
 def complex_structure(V: int) -> Array:
     """Block-diagonal 90-degree rotation ``J``, one ``[[0,-1],[1,0]]`` per 2-D gyro
     (the complex structure the gyroscopic 1-form needs; see ``gyro_phase_integrator``)."""
@@ -124,6 +151,28 @@ def make_config(rows: int = 3, cols: int = 4, **kw) -> GyroConfig:
 # ---------------------------------------------------------------------------
 # The physics: one 2-D harmonic arrangement, read by Phigyro.
 # ---------------------------------------------------------------------------
+
+
+def rod_gravity(g: float, L: float):
+    """Nonlinear rod-gravity on-site potential for a 2-D gyro (the blog's rod geometry).
+
+    A gyro tip displaced by ``q`` (horizontal, ``r = |q|``) on a rod of length ``L`` sits
+    at height ``sqrt(L^2 - r^2)``; gravity gives the on-site potential
+
+        U_grav(q) = -g * sqrt(L^2 - |q|^2),
+
+    a restoring well with its minimum upright (``r = 0``). It is genuinely *nonlinear*:
+    the restoring force ``-dU = -g q / sqrt(L^2 - r^2)`` stiffens as the rod nears
+    horizontal (``r -> L``), and its small-tilt limit is ``(g/L) q`` -- exactly the
+    harmonic well the surrogate used (spring constant ``g/L``). Plug into
+    ``wiring.compose_graph(..., onsite=rod_gravity(g, L))`` so each gyro carries it.
+    Valid for ``|q| < L`` (a rod cannot tilt past horizontal); run with tilts in range.
+    """
+
+    def U(q: Array) -> Array:
+        return -g * jnp.sqrt(L ** 2 - jnp.sum(q ** 2))
+
+    return U
 
 
 def gyro_arrangement(

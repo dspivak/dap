@@ -21,11 +21,13 @@ from .integrator import (
     phase_integrator,
 )
 from .interpretation import smooth_interpretation
-from .functors import Phi, Phiconf, Phidamped, Phigyro, Phiphase, Phirk4, cot_object, cot_map
+from .functors import (
+    Phi, Phiconf, Phidamped, Phigyro, Phiphase, Phirk4, Phirk4gyro, cot_object, cot_map,
+)
 from .org2 import OrgMorphism2, org2_from_integrator
 from .orgK import OrgMorphismK, orgK_from_integrator
 from .leapfrog import Phileap, leapfrog_integrator
-from .rk4 import rk4_integrator
+from .rk4 import rk4_gyro_integrator, rk4_integrator
 from . import functors
 from . import wiring
 from . import learning
@@ -36,6 +38,7 @@ from . import learning
 from . import system_id
 from . import pinn
 from . import gyroscope
+from . import gyroscope_faithful
 
 __all__ = [
     "ReactiveVectorSpace",
@@ -59,9 +62,11 @@ __all__ = [
     "Phigyro",
     "Phiphase",
     "Phirk4",
+    "Phirk4gyro",
     "Phileap",
     "leapfrog_integrator",
     "rk4_integrator",
+    "rk4_gyro_integrator",
     "OrgMorphism2",
     "org2_from_integrator",
     "OrgMorphismK",
@@ -75,4 +80,5 @@ __all__ = [
     "system_id",
     "pinn",
     "gyroscope",
+    "gyroscope_faithful",
 ]

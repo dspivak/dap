@@ -56,11 +56,12 @@ heat equation and leapfrog.
 
 ## Extensions (beyond the paper)
 
-Four further constructions **reuse** the functorial core above but add content
+Five further constructions **reuse** the functorial core above but add content
 that is *not* part of the paper's formal development. They demonstrate that the
 primitives compose — toy-scale (`gyroscope.py` is a harmonic surrogate inspired by
-Bull & Achour) — not implementations of paper results, and not claims to beat
-dedicated tools. `dap-demo` prints them under a separate **“Extensions”** heading.
+Bull & Achour, and `gyroscope_faithful.py` is the equation-faithful version of it) —
+not implementations of paper results, and not claims to beat dedicated tools.
+`dap-demo` prints them under a separate **“Extensions”** heading.
 
 | construction | what it reuses (paper) | what it adds (not in the paper) |
 |---|---|---|
@@ -68,6 +69,7 @@ dedicated tools. `dap-demo` prints them under a separate **“Extensions”** he
 | `system_id.py` | `Phiphase` + the learner of `sec.dl_warmup` | a nonlinear pendulum, a tanh-MLP predictor, libration sampling — identifying a flow map |
 | `pinn.py` | `Phiconf` + the learner of `sec.dl_warmup` | a deep-Ritz Dirichlet energy and a coordinate MLP — a physics-informed net for 1D Poisson |
 | `gyroscope.py` (`Phigyro`) | `Phiphase` + the graph-Laplacian spring potential of `sec.graph_laplacian` (written directly, **not** assembled by the prism wiring) + the learner of `sec.dl_warmup` | 2-D harmonic gyros with on-site gravity, a gyroscopic skew 1-form, and a linear encoder/decoder + Adam — a harmonic surrogate of the Bull & Achour gyroscope digit-classifier |
+| `gyroscope_faithful.py` (`Phirk4gyro`) | the prism graph-wiring of `sec.graph_laplacian` (now at `R²`) + RK4 as `org^(4)` (`rmk.multistage`) + the 1-form vector space (`prop.one_forms_vector_space`, `rmk.adam`) | the Bull & Achour machine built **equation-faithfully**: hex springs *from the wiring*, nonlinear rod gravity, quadratic-drag + per-gyro precession 1-forms, RK4 phase integration — **no accuracy claim**; the result is the springs→0 ablation |
 
 The integrator alone turns one convex arrangement into gradient descent,
 conservative oscillation, or heavy-ball momentum (`Phiconf`/`Phiphase`/`Phidamped`)
@@ -91,6 +93,57 @@ PenDigits form). The interesting result is the **ablation**: freezing the spring
 zero collapses it to chance — the blog's "Take 1" failure (no coupling, no
 information flow), here a one-line wiring fact — while the gyroscopic term turns out
 not to be needed for this task.
+
+### `gyroscope_faithful.py` — the faithful machine (no accuracy claim)
+
+`gyroscope_faithful.py` is a *supplement* to the harmonic surrogate above: the same
+Bull & Achour machine, but built **equation-faithfully and entirely from the paper's
+constructions**, so you can read the ODEs and check that it factors through `Phi`. Its
+point is the **factorization** and the **springs→0 ablation** — *not* accuracy. Unlike
+the surrogate (which reports its own measured number, qualified), the faithful machine
+makes **no accuracy claim** and runs on purely synthetic data. Each force is one slot,
+assembled categorically:
+
+- **spring coupling** — the prism graph-wiring (`compose_graph`, `sec.graph_laplacian`)
+  generalized to `R²` gyros: the graph-Laplacian potential *emerges from composition*,
+  it is not a hand-written `U`;
+- **rod gravity** — the nonlinear on-site potential `−g·√(L²−|q|²)`;
+- **mass** in the reactive sharp; **quadratic air drag** and **gyroscopic precession**
+  as two 1-forms; **RK4** as `Phirk4gyro` (RK4 on the phase state, an `org^(4)` morphism);
+  the **input nudge** through the open input port.
+
+The rollout genuinely runs `Phirk4gyro → orgK_from_integrator → smooth_interpretation`,
+with the force `= jax.grad(U)` (the framework's backward pass) — no physics is computed
+by hand outside the functor.
+
+**The headline is the ablation, not a number.** Input gyros are the left column, output
+gyros the right column. With springs, the input signal reaches the output and depends on
+it; **freeze the stiffness to zero and the output stays at rest regardless of the
+input** — there is no spring path to carry information across. That is the blog's "Take 1
+failed", recast as a one-line categorical wiring fact (a tested result).
+
+**Deviations from the blog** (deliberate — the goal is the factorization and the
+ablation, not their experiment):
+
+| blog | faithful machine here |
+|---|---|
+| ~100 gyros, 10×10 hex, ~261 springs | a small hex lattice (scale isn't needed for the factorization or the ablation) |
+| per-gyro mass, per-edge stiffness | uniform mass / stiffness (one scalar each) |
+| ~100-step 2-channel PenDigits strokes | short synthetic `make_strokes` (generator-as-spec, no download) |
+| trained to a benchmark accuracy | **no accuracy claim** — only that the loss decreases under training |
+| RK4 ODE solver | RK4 as `org^(4)` — matches the solver *and* factors through the framework |
+
+**Beyond-paper caveats** (banner-labeled in the code): the quadratic-drag and
+gyroscopic 1-forms are monoidal over `⊕` but natural only over a *subcategory* of
+`rvect` (per-gyro `O(2)`) — which `rmk.adam` explicitly sanctions ("it just lives over a
+smaller `Q`"); whether `sarr → org^(K)` is a *functor* is left open (datatype +
+instances + composition, not a proof); and the encoder/decoder **drive and readout are
+the hand-added open I/O interface** — the *coupled physics* factors through the
+framework, the I/O does not claim to.
+
+See it in `dap-demo` (the springs-ablation line under Extensions), or import
+`make_hex_config` / `make_strokes` / `train` / `output_readout` from
+`dap.gyroscope_faithful`.
 
 ## Build your own
 

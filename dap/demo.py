@@ -190,6 +190,22 @@ def demo_gyroscope():
     print("    (harmonic surrogate inspired by Bull & Achour; `python -m dap.gyroscope` -> ~0.83 at 3x4, ~0.87 at 4x5)")
 
 
+def demo_faithful():
+    # The faithful Bull & Achour machine (gyroscope_faithful.py): hex springs from the prism
+    # wiring, nonlinear rod gravity, quadratic drag + per-gyro precession, RK4 (org^(4)). The
+    # headline is the springs->0 ablation, NOT accuracy -- a one-line categorical wiring fact.
+    from dap.gyroscope_faithful import make_hex_config, init_params, output_readout
+
+    cfg = make_hex_config(3, 3, n_classes=4, settle=10)
+    p = init_params(cfg, seed=0)
+    rng = np.random.default_rng(1)
+    drive = jnp.asarray(0.2 * rng.standard_normal((8, cfg.n_in)))
+    on = float(jnp.linalg.norm(output_readout(p, drive, cfg)))
+    off = float(jnp.linalg.norm(output_readout({**p, "log_kappa": jnp.array(-100.0)}, drive, cfg)))
+    print(f"  faithful gyro (org^(4) RK4): output |readout| {on:.2f} with springs -> {off:.0e} with springs frozen")
+    print("    (springs->0 severs input->output: the blog's 'Take 1' as a wiring fact; no accuracy claim)")
+
+
 def main():
     print("dynamic-algebra-potentials: worked examples\n")
     print("Phiconf -- descent dynamics:")
@@ -206,6 +222,7 @@ def main():
     demo_pinn()
     demo_system_id()
     demo_gyroscope()
+    demo_faithful()
 
 
 if __name__ == "__main__":

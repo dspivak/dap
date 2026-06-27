@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import jax.numpy as jnp
 
-from .integrator import IntegratorK
+from .integrator import IntegratorK, quadratic_drag_kick
 
 
 def rk4_integrator(h: float = 0.1) -> IntegratorK:
@@ -88,4 +88,92 @@ def rk4_integrator(h: float = 0.1) -> IntegratorK:
         reads=(read1, read2, read3, read4),
         advances=(advance1, advance2, advance3, finish),
         label=f"rk4(h={h:g})",
+    )
+
+
+def rk4_gyro_integrator(
+    h: float = 0.1, drag: float = 0.0, gamma: float = 0.0, J=None, gyro_block=None
+) -> IntegratorK:
+    """Classical RK4 on the gyro *phase* system, an ``org^(4)`` integrator (rmk.multistage).
+
+    The faithful-machine integrator: it carries the *same* forces as
+    ``gyro_phase_integrator`` (springs and rod gravity in the potential ``U``, quadratic
+    drag and gyroscopic precession in the 1-form) but steps them with the blog's
+    classical four-stage Runge--Kutta instead of symplectic Euler. The phase vector
+    field on the state ``(q, xi)`` is
+
+        qdot  = sharpR_q(xi) =: v
+        xidot = -dU(q) - drag * F(v) - gamma (.) (J v),
+
+    with ``dU`` the framework covector ``xi_Q`` evaluated by the interpretation at each
+    stage's position (so it includes any open-port forcing), ``F`` the per-gyro quadratic
+    drag (``quadratic_drag_kick``), and ``gamma`` a scalar or per-component vector. The
+    four ``org^(4)`` rounds are the four force evaluations ``k1..k4``; ``finish`` does
+    ``(q,xi) + (h/6)(k1 + 2k2 + 2k3 + k4)``.
+
+    Non-symplectic (RK4 is); ``drag``/``gamma`` may be traced, ``J``/``gyro_block`` are
+    Python-time structural choices. State and forces mirror ``gyro_phase_integrator``;
+    only the time-stepping differs.
+    """
+    half = 0.5 * h
+    Jm = None if J is None else jnp.asarray(J, float)
+
+    def deriv(Q, q_s, xi_s, xi_Q):
+        """The phase derivative ``(qdot, xidot)`` at a stage state, given ``xi_Q = dU``."""
+        v = Q.apply_sharp(q_s, xi_s)
+        k_xi = -xi_Q
+        if gyro_block is not None:
+            k_xi = k_xi - drag * quadratic_drag_kick(v, gyro_block)
+        if Jm is not None:
+            k_xi = k_xi - gamma * (Jm @ v)
+        return (v, k_xi)
+
+    def axpy(base, a, k):
+        (q, xi), (kq, kxi) = base, k
+        return (q + a * kq, xi + a * kxi)
+
+    def read1(Q, base):
+        return base[0]
+
+    def read2(Q, mid):
+        base, ks = mid
+        return axpy(base, half, ks[0])[0]
+
+    def read3(Q, mid):
+        base, ks = mid
+        return axpy(base, half, ks[1])[0]
+
+    def read4(Q, mid):
+        base, ks = mid
+        return axpy(base, h, ks[2])[0]
+
+    def advance1(Q, base, xi_Q):
+        k1 = deriv(Q, base[0], base[1], xi_Q)
+        return (base, (k1,))
+
+    def advance2(Q, mid, xi_Q):
+        base, ks = mid
+        s = axpy(base, half, ks[0])
+        return (base, ks + (deriv(Q, s[0], s[1], xi_Q),))
+
+    def advance3(Q, mid, xi_Q):
+        base, ks = mid
+        s = axpy(base, half, ks[1])
+        return (base, ks + (deriv(Q, s[0], s[1], xi_Q),))
+
+    def finish(Q, mid, xi_Q):
+        base, ks = mid
+        s = axpy(base, h, ks[2])
+        k4 = deriv(Q, s[0], s[1], xi_Q)
+        k1, k2, k3 = ks
+        q0, xi0 = base
+        new_q = q0 + (h / 6.0) * (k1[0] + 2.0 * k2[0] + 2.0 * k3[0] + k4[0])
+        new_xi = xi0 + (h / 6.0) * (k1[1] + 2.0 * k2[1] + 2.0 * k3[1] + k4[1])
+        return (new_q, new_xi)
+
+    return IntegratorK(
+        init=lambda Q: (jnp.zeros(Q.dim), jnp.zeros(Q.dim)),
+        reads=(read1, read2, read3, read4),
+        advances=(advance1, advance2, advance3, finish),
+        label=f"rk4_gyro(h={h:g})",
     )

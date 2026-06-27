@@ -270,67 +270,80 @@ def _graph_ports(
     return out_lists, in_lists, perm
 
 
-def graph_wire(num_vertices: int, edges: Sequence[Tuple[int, int]]) -> SmoothArrangement:
+def graph_wire(
+    num_vertices: int, edges: Sequence[Tuple[int, int]], vdim: int = 1
+) -> SmoothArrangement:
     """The prism wiring ``R^{varphi_G}`` of sec.graph_laplacian as a static arrangement.
 
     Image under ``R^-`` (lem.lens_pow) of the prism ``varphi_G : (x)_v <in(v)/out(v)>
-    -> <0/0>`` (eqn.prism_f). Source ``(x)_v <R^{in(v)}|R^{out(v)}> = <R^E|R^E>``,
-    target the unit ``<R^0|R^0>``, trivial parameter ``R^0``, ``U' = 0``. The input
-    map ``prod_v R^{out(v)} -> prod_v R^{in(v)}`` is the identity on ``R^E`` shuttled
-    through ``src``/``tgt``, i.e. ``in_f(m_out) = m_out[perm]`` (see ``_graph_ports``).
+    -> <0/0>`` (eqn.prism_f). Each edge port carries ``vdim`` components (``vdim = 1``
+    is the paper's scalar case; ``vdim = 2`` wires 2-D gyros). Source
+    ``(x)_v <R^{vdim*in(v)}|R^{vdim*out(v)}> = <R^{vdim*E}|R^{vdim*E}>``, target the
+    unit ``<R^0|R^0>``, trivial parameter ``R^0``, ``U' = 0``. The input map routes
+    each in-edge's ``vdim``-block from its source's out-edge block: ``in_f(m_out) =
+    m_out[comp_perm]`` where ``comp_perm`` is the edge permutation ``perm``
+    (``_graph_ports``) expanded over the ``vdim`` components.
     """
     E = len(edges)
     _, _, perm = _graph_ports(num_vertices, edges)
     perm = jnp.asarray(perm, dtype=int)
+    # expand the edge permutation to act block-wise on vdim components per edge:
+    comp_perm = (perm[:, None] * vdim + jnp.arange(vdim)).reshape(-1)
 
     def out_f(q_wire: Array, m_out: Array) -> Array:
         return jnp.zeros(0)  # bang : 0 -> sum_v out(v)
 
     def in_f(q_wire: Array, m_out: Array, n_in: Array) -> Array:
-        return m_out[perm]  # route each in-edge from its source's out-edge
+        return m_out[comp_perm]  # route each in-edge block from its source's out-edge block
 
     def U(q_wire: Array, m_out: Array, n_in: Array) -> Array:
         return jnp.array(0.0)
 
     return SmoothArrangement(
         Q=trivial(),
-        out_dim_M=E,
-        in_dim_M=E,
+        out_dim_M=E * vdim,
+        in_dim_M=E * vdim,
         out_dim_N=0,
         in_dim_N=0,
         out_f=out_f,
         in_f=in_f,
         U=U,
-        label=f"graph_wire(V={num_vertices}, E={E})",
+        label=f"graph_wire(V={num_vertices}, E={E}, vdim={vdim})",
     )
 
 
-def harmonic_vertex(d_in: int, d_out: int, m: float, kappas: Sequence[float]) -> SmoothArrangement:
-    """The harmonic particle ``Part_v : <1/1> -> <R^{in(v)}|R^{out(v)}>`` at a vertex.
+def harmonic_vertex(
+    d_in: int, d_out: int, m: float, kappas: Sequence[float], vdim: int = 1, onsite=None
+) -> SmoothArrangement:
+    """The harmonic particle ``Part_v : <1/1> -> <R^{vdim*in(v)}|R^{vdim*out(v)}>`` at a vertex.
 
-    Parameter ``Q_v = R`` with constant ``sharp(xi) = xi/m``; output map the diagonal
-    ``q |-> (q)_{e in out(v)}`` broadcasting position to the ``d_out`` out-edges; input
-    map vacuous; potential ``U_v(q, (q'_e)) = sum_e (kappa_e/2)(q - q'_e)^2`` over the
-    ``d_in`` in-edges (sec.graph_laplacian). The chain particle of sec.spring_first_pass
-    is the case ``d_in = d_out = 1``.
+    Parameter ``Q_v = R^{vdim}`` with constant ``sharp(xi) = xi/m`` (per component);
+    output map the diagonal ``q |-> (q)_{e in out(v)}`` broadcasting the ``vdim``-vector
+    position to the ``d_out`` out-edges; input map vacuous; potential
+    ``U_v(q, (q'_e)) = sum_e (kappa_e/2)|q - q'_e|^2`` (Euclidean per edge) over the
+    ``d_in`` in-edges (sec.graph_laplacian), plus an optional on-site term
+    ``onsite(q)`` (e.g.\\ a vertex's rod-gravity well). The paper's scalar chain/graph
+    particle is the case ``vdim = 1`` (and ``onsite = None``); ``vdim = 2`` is a 2-D gyro.
     """
     kappas = jnp.asarray(kappas, float)
 
     def out_f(q: Array, m_out: Array) -> Array:
-        return jnp.full((d_out,), q[0])  # diagonal: broadcast position to out-edges
+        return jnp.tile(q, d_out)  # diagonal: broadcast the vdim-vector to each out-edge
 
     def in_f(q: Array, m_out: Array, n_in: Array) -> Array:
         return jnp.zeros(0)  # bang
 
     def U(q: Array, m_out: Array, n_in: Array) -> Array:
-        return 0.5 * jnp.sum(kappas * (q[0] - n_in) ** 2)
+        nbr = n_in.reshape(d_in, vdim)  # in-edge neighbor positions
+        springs = 0.5 * jnp.sum(kappas * jnp.sum((q[None, :] - nbr) ** 2, axis=1))
+        return springs + (onsite(q) if onsite is not None else 0.0)
 
     return SmoothArrangement(
-        Q=diagonal(jnp.array([1.0 / m])),
+        Q=diagonal(jnp.full(vdim, 1.0 / m)),
         out_dim_M=0,
         in_dim_M=0,
-        out_dim_N=d_out,
-        in_dim_N=d_in,
+        out_dim_N=d_out * vdim,
+        in_dim_N=d_in * vdim,
         out_f=out_f,
         in_f=in_f,
         U=U,
@@ -339,21 +352,31 @@ def harmonic_vertex(d_in: int, d_out: int, m: float, kappas: Sequence[float]) ->
 
 
 def compose_graph(
-    num_vertices: int, edges: Sequence[Tuple[int, int]], m: float, kappa: float
+    num_vertices: int,
+    edges: Sequence[Tuple[int, int]],
+    m: float,
+    kappa: float,
+    vdim: int = 1,
+    onsite=None,
 ) -> SmoothArrangement:
     """``wire_G = R^{varphi_G}((Part_v)_v)`` of eqn.graph_wire, by genuine composition.
 
         wire_G = compose_seq( tensor(Part_v for v), graph_wire(G) ) : <1/1> -> <1/1>.
 
-    A closed 0-ary arrangement with parameter ``R^V``, ``sharp = (xi_v/m)_v``, and
-    composite potential ``sum_e (kappa/2)(q_tgt(e) - q_src(e))^2`` (eqn.graph_potential)
-    that *emerges* from the prism wiring composed with the vertex particles -- it is
-    not written by hand. Uniform mass ``m`` and spring constant ``kappa``.
+    A closed 0-ary arrangement with parameter ``R^{vdim*V}``, ``sharp = (xi_v/m)_v``,
+    and composite potential ``sum_e (kappa/2)|q_tgt(e) - q_src(e)|^2`` (eqn.graph_potential,
+    Euclidean per edge) plus the optional on-site term ``sum_v onsite(q_v)`` -- the whole
+    potential *emerges* from the prism wiring composed with the vertex particles, it is
+    not written by hand. Uniform mass ``m`` and spring constant ``kappa``; ``vdim = 2``
+    gives the 2-D gyro network, ``onsite`` carries (e.g.) the per-gyro rod gravity.
     """
     out_lists, in_lists, _ = _graph_ports(num_vertices, edges)
     vertices = [
-        harmonic_vertex(len(in_lists[v]), len(out_lists[v]), m, [kappa] * len(in_lists[v]))
+        harmonic_vertex(
+            len(in_lists[v]), len(out_lists[v]), m, [kappa] * len(in_lists[v]),
+            vdim=vdim, onsite=onsite,
+        )
         for v in range(num_vertices)
     ]
-    wired = compose_seq(tensor_arrangements(vertices), graph_wire(num_vertices, edges))
-    return replace(wired, label=f"graph(V={num_vertices}, E={len(edges)})")
+    wired = compose_seq(tensor_arrangements(vertices), graph_wire(num_vertices, edges, vdim=vdim))
+    return replace(wired, label=f"graph(V={num_vertices}, E={len(edges)}, vdim={vdim})")

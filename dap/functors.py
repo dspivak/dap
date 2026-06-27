@@ -32,7 +32,7 @@ from .interpretation import smooth_interpretation
 from .org import OrgMorphism
 from .orgK import OrgMorphismK, orgK_from_integrator
 from .polynomial import Cot, DirichletProduct, PolyMap, Poly
-from .rk4 import rk4_integrator
+from .rk4 import rk4_gyro_integrator, rk4_integrator
 from .rvect import SmoothMap
 
 
@@ -165,17 +165,18 @@ def Phidamped(arr: SmoothArrangement, damping: float = 0.1) -> OrgMorphism:
     return Phi(arr, damped_phase_integrator(damping))
 
 
-def Phigyro(arr: SmoothArrangement, damping: float = 0.0, gamma: float = 0.0, J=None) -> OrgMorphism:
-    """Gyroscopic phase dynamics: phase + damping + a skew (gyroscopic) 1-form.
+def Phigyro(arr: SmoothArrangement, damping: float = 0.0, gamma: float = 0.0, J=None,
+            drag: float = 0.0, gyro_block=None) -> OrgMorphism:
+    """Gyroscopic phase dynamics: phase + damping + skew + optional quadratic drag.
 
     EXTENSION (beyond the paper) -- see ``gyro_phase_integrator``. The same
     arrangement read by a phase integrator carrying, besides the kinetic 1-form,
-    a damping term ``c`` and a velocity-perpendicular gyroscopic term
-    ``gamma * J``. This is the integrator behind the harmonic gyro surrogate
-    (gravity + springs in ``U``, mass in the sharp, damping and precession in the
-    1-form); see ``dap/gyroscope.py``.
+    a damping term ``c``, a velocity-perpendicular gyroscopic term ``gamma * J``, and
+    (with ``gyro_block`` set) a per-gyro quadratic-drag 1-form ``drag * |v| v``. This is
+    the integrator behind the gyro surrogate (gravity + springs in ``U``, mass in the
+    sharp, damping/precession/drag in the 1-form); see ``dap/gyroscope.py``.
     """
-    return Phi(arr, gyro_phase_integrator(damping, gamma, J))
+    return Phi(arr, gyro_phase_integrator(damping, gamma, J, drag, gyro_block))
 
 
 def Phirk4(arr: SmoothArrangement, h: float = 0.1) -> OrgMorphismK:
@@ -188,3 +189,16 @@ def Phirk4(arr: SmoothArrangement, h: float = 0.1) -> OrgMorphismK:
     a *functor* (rmk.multistage) is left open; this is the datatype plus an instance.
     """
     return orgK_from_integrator(arr, rk4_integrator(h))
+
+
+def Phirk4gyro(arr: SmoothArrangement, h: float = 0.1, drag: float = 0.0,
+               gamma: float = 0.0, J=None, gyro_block=None) -> OrgMorphismK:
+    """RK4 gyro phase dynamics: the faithful machine's integrator, as an ``org^(4)`` morphism.
+
+    The ``K = 4`` analog of ``Phigyro`` -- the same forces (springs and rod gravity in
+    ``U``, quadratic drag and per-gyro precession in the 1-form) but stepped with classical
+    RK4 (``rk4.rk4_gyro_integrator``) on the phase state, matching the blog's integrator
+    rather than symplectic Euler. Non-symplectic; ``sarr → org^(4)`` functoriality is left
+    open, as for every ``org^(K)``.
+    """
+    return orgK_from_integrator(arr, rk4_gyro_integrator(h, drag, gamma, J, gyro_block))

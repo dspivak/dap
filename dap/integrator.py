@@ -119,8 +119,42 @@ def damped_phase_integrator(damping: float = 0.0) -> Integrator:
     )
 
 
+def quadratic_drag_kick(v, gyro_block: int):
+    """Per-gyro quadratic-drag force ``F(v)_i = |v_i| v_i`` (block Euclidean norm).
+
+    The blog's air drag is a force ``~ -|v| v`` (opposes velocity, magnitude growing
+    with speed squared). As a 1-form ``omega_drag(q, xi) = (|v| v, 0)`` with
+    ``v = sharpR_q(xi)`` and ``|v|`` taken *per gyro* (the Euclidean norm of each
+    ``gyro_block``-dimensional block); fed through the symplectic sharp it adds
+    ``-|v| v`` to the momentum.
+
+    Naturality grounding (rmk.adam -- the monoidality is non-negotiable, the
+    naturality may be restricted):
+
+    * MONOIDAL over ``(+)``: each gyro drags only on its own velocity, so
+      ``omega_drag`` is block-diagonal, ``omega_{Q(+)W} = omega_Q (+) omega_W``.
+      rmk.adam: "The monoidal requirement of integrators cannot be negotiated ...
+      each box can compute its own update." Quadratic drag passes this.
+    * NATURAL only over a *subcategory*: ``|v_i|`` is invariant under per-gyro
+      orthogonal maps (``O(2)`` per 2-D gyro), not under a general sharp-equivariant
+      ``rvect``-isomorphism. rmk.adam explicitly allows this -- such a section "is not
+      outside the framework; it just lives over a smaller ``Q``" -- here the
+      subcategory of Euclidean gyro-spaces with block-orthogonal isomorphisms, the
+      *top* of the paper's chain ``orthogonal > signed perms > coord perms`` (drag is
+      thus *more* natural than Adam, which the paper places over signed permutations).
+      Restricting ``Q`` keeps thm.dynamics_functor, so this remains a genuine integrator.
+    """
+    vg = v.reshape(-1, gyro_block)
+    sq = jnp.sum(vg * vg, axis=1, keepdims=True)  # |v_i|^2 per gyro
+    # Double-``where`` so the gradient of ``|v_i|`` is finite (its true value 0) at rest
+    # ``v_i = 0``, without perturbing the exact value ``|v_i| v_i`` anywhere else: a
+    # quadratic drag IS differentiable at zero velocity, but a naive ``sqrt`` gives 0/0.
+    speed = jnp.where(sq > 0.0, jnp.sqrt(jnp.where(sq > 0.0, sq, 1.0)), 0.0)
+    return (speed * vg).reshape(v.shape)
+
+
 def gyro_phase_integrator(
-    damping: float = 0.0, gamma: float = 0.0, J=None
+    damping: float = 0.0, gamma: float = 0.0, J=None, drag: float = 0.0, gyro_block=None
 ) -> Integrator:
     """The phase integrator with a *damping* and a *gyroscopic* 1-form added.
 
@@ -151,12 +185,24 @@ def gyro_phase_integrator(
     rotor picks out an orientation, breaking the full reactive symmetry the paper's
     1-forms (``beta``, ``zeta``) enjoy. It is exactly the minimal example that lives
     in ``rvect`` but outside the *harmonic* (symmetric-sharp) regime of
-    def.arrangement_terminology.
+    def.arrangement_terminology. (The same rmk.adam principle that justifies the
+    quadratic-drag term below applies: ``omega_gyro`` "lives over a smaller ``Q``".)
+
+    With ``gyro_block`` set, a fourth, *quadratic-drag* 1-form is added (the blog's
+    air drag): ``omega_drag(q, xi) = (|v| v, 0)``, ``v = sharpR_q(xi)``, with ``|v|``
+    the per-gyro Euclidean norm (see ``quadratic_drag_kick``). It is monoidal over
+    ``(+)`` but natural only over per-gyro orthogonal maps -- a "smaller ``Q``" in the
+    precise sense rmk.adam sanctions (the chain ``orthogonal > signed perms > coord
+    perms``; drag sits at the top, Adam at signed perms). ``drag`` may be trained;
+    ``gyro_block`` (its presence and the gyro dimension) is the Python-time choice.
     """
 
-    # damping ``c`` and gyroscopic ``gamma`` may be traced (they are trainable in
-    # the gyroscope emulation), so we do not coerce them to ``float`` here; only
-    # the *presence* of ``J`` is a static (Python-time) choice.
+    # damping ``c``, gyroscopic ``gamma`` and ``drag`` may be traced (they are
+    # trainable in the gyroscope emulation), so we do not coerce them to ``float``
+    # here; only the *presence* of ``J`` and of ``gyro_block`` are static
+    # (Python-time) choices. ``gamma`` may be a scalar or a per-component vector
+    # (length ``Q.dim``, e.g. ``repeat(gamma_per_gyro, 2)``) -- the latter, broadcast
+    # against ``Jm @ v``, gives each gyro its own precession rate.
     c = damping
     g = gamma
     Jm = None if J is None else jnp.asarray(J, float)
@@ -165,6 +211,8 @@ def gyro_phase_integrator(
         q, xi = s
         v = Q.apply_sharp(q, xi)  # velocity sharpR_q(xi)
         new_xi = (1.0 - c) * xi - xi_Q
+        if gyro_block is not None:
+            new_xi = new_xi - drag * quadratic_drag_kick(v, gyro_block)  # quadratic air drag
         if Jm is not None:
             new_xi = new_xi - g * (Jm @ v)  # gyroscopic precession (skew, no work)
         return (q + v, new_xi)
