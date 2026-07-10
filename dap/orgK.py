@@ -13,14 +13,18 @@ single-stage ``org.OrgMorphism`` (its last round lands directly in a new state).
 
 This module is the **general datatype**, independent of any integrator: ``step``
 may be *any* such K-round behavior. A K-stage integrator (RK4, ``rk4.py``) is one
-instance built on top of it via ``orgK_from_integrator``. Composition ``parallel``
-and ``then_static`` mirror ``org.OrgMorphism`` / ``org2.OrgMorphism2``, recursing
-on the remaining rounds.
+instance built on top of it via ``orgK_from_integrator``. Composition ``parallel``,
+``then_static`` and the sequential ``then`` mirror ``org.OrgMorphism`` /
+``org2.OrgMorphism2``, recursing on the remaining rounds.
 
-Caveat: this provides the datatype, its execution, and these two composites
-(tested). The claim that ``sarr → org^(K)`` is a lax monoidal *functor* (the general
-case of rmk.multistage) is conjectural and is **not** proved here -- exactly as for
-``org^(2)``.
+Caveat: this provides the datatype, its execution, and these composites (tested).
+The claim that ``sarr → org^(K)`` is a lax monoidal *functor* (the general case of
+rmk.multistage) is conjectural and is **not** proved here -- exactly as for ``org^(2)``.
+But ``then`` (the general ``pc`` composite, on which the functoriality of ``Phi`` rests)
+now lets the second-pass audit of sec.spring_second_pass be run for the K=4 functor
+``Phirk4`` (``test_multistage_functoriality.py``), as ``org.OrgMorphism.then`` does at
+K=1: it passes (both passes agree exactly) -- computational evidence for the ``org^(K)``
+case, still not a proof.
 """
 
 from __future__ import annotations
@@ -119,6 +123,63 @@ class OrgMorphismK:
             return composed_act, fiber
 
         return OrgMorphismK(outer.src, self.tgt_poly, self.K, self.state, new_step)
+
+    def then(self, other: "OrgMorphismK") -> "OrgMorphismK":
+        """Sequential composition in pc, lifted to K stages: ``self : p -> q`` then
+        ``other : q -> r``, giving ``p -> r`` (sec.org). State spaces multiply.
+
+        The K-round analogue of ``org.OrgMorphism.then`` (and the ``org^(2)`` version in
+        ``org2.OrgMorphism2.then``). Each of the K rounds threads a ``p``-position forward
+        through ``self`` then ``other`` and an ``r``-direction backward through ``other``
+        then ``self``, updating both states; the **remaining rounds recurse** --
+        ``rest_self.then(rest_other)`` when ``K > 1`` (both ``rest`` are ``(K-1)``-round
+        inner coalgebras), tupling the two final macro-states when ``K = 1`` (exactly as
+        ``then_static``/``parallel`` recurse). Both stage counts must agree.
+
+        This is the general ``pc`` composite on which the functoriality of a K-stage
+        ``Phi`` (``functors.Phirk4`` at K=4) rests: the multi-stage case of the
+        second-pass audit (sec.spring_second_pass) that ``org.OrgMorphism.then`` supports
+        at K=1. Whether ``sarr -> org^(K)`` *is* a functor (rmk.multistage) is still open;
+        this method is what lets that be tested round-by-round, not a proof.
+        """
+        if self.K != other.K:
+            raise ValueError(f"then needs equal stage counts, got {self.K} and {other.K}")
+
+        def new_step(s):
+            s_self, s_other = s
+            act_self, fiber_self = self.step(s_self)
+            act_other, fiber_other = other.step(s_other)
+
+            composed_act = PolyMap(
+                src=act_self.src,
+                tgt=act_other.tgt,
+                position_action=lambda i: act_other.on_position(act_self.on_position(i)),
+                direction_action=lambda i, d_r: act_self.on_direction(
+                    i, act_other.on_direction(act_self.on_position(i), d_r)
+                ),
+                label=f"{act_self.label};{act_other.label}",
+            )
+
+            def fiber(i):                       # i: p-position
+                j, at_self = fiber_self(i)      # j: q-position
+                k, at_other = fiber_other(j)    # k: r-position
+
+                def at_pos(d_r):                # d_r: r-direction at k
+                    d_q, rest_other = at_other(d_r)   # d_q: q-direction; rest: inner or state
+                    d_p, rest_self = at_self(d_q)     # d_p: p-direction; rest: inner or state
+                    if self.K > 1:
+                        new_rest = rest_self.then(rest_other)  # remaining rounds composed
+                    else:
+                        new_rest = (rest_self, rest_other)     # both are final macro-states
+                    return d_p, new_rest
+
+                return k, at_pos
+
+            return composed_act, fiber
+
+        return OrgMorphismK(
+            self.src_poly, other.tgt_poly, self.K, (self.state, other.state), new_step
+        )
 
     def parallel(self, other: "OrgMorphismK") -> "OrgMorphismK":
         """Monoidal product: two ``org^(K)`` morphisms run side by side (sec.org)."""

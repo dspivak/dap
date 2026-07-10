@@ -10,13 +10,17 @@ Round 2 runs that inner coalgebra and lands in ``S``.
 
 This module is the **general datatype**, independent of any integrator: ``step``
 may be *any* such two-round behavior. A two-stage integrator (leapfrog,
-``leapfrog.py``) is one instance built on top of it. Composition ``parallel`` and
-``then_static`` mirror ``org.OrgMorphism``, delegating the inner round to the
-1-stage versions.
+``leapfrog.py``) is one instance built on top of it. Composition ``parallel``,
+``then_static`` and the sequential ``then`` mirror ``org.OrgMorphism``, delegating the
+inner round to the 1-stage versions.
 
-Caveat: this provides the datatype, its execution, and these two composites
-(tested). The claim that ``sarr → org^(2)`` is a lax monoidal *functor*
-(the K=2 case of rmk.multistage) is conjectural and is **not** proved here.
+Caveat: this provides the datatype, its execution, and these composites (tested).
+The claim that ``sarr → org^(2)`` is a lax monoidal *functor* (the K=2 case of
+rmk.multistage) is conjectural and is **not** proved here -- but ``then`` (the general
+``pc`` composite) now lets the second-pass functoriality audit of sec.spring_second_pass
+be run for ``Phileap`` (``test_multistage_functoriality.py``), as ``org.OrgMorphism.then``
+does at K=1: it passes (both passes agree exactly), evidence for the K=2 case, still not
+a proof.
 """
 
 from __future__ import annotations
@@ -103,6 +107,51 @@ class OrgMorphism2:
             return composed_act, fiber
 
         return OrgMorphism2(outer.src, self.tgt_poly, self.state, new_step)
+
+    def then(self, other: "OrgMorphism2") -> "OrgMorphism2":
+        """Sequential composition in pc, lifted to two stages: ``self : p -> q`` then
+        ``other : q -> r``, giving ``p -> r`` (sec.org). State spaces multiply.
+
+        The two-stage analogue of ``org.OrgMorphism.then``. Each round threads a
+        ``p``-position forward through ``self`` then ``other`` to an ``r``-position and
+        an ``r``-direction backward through ``other`` then ``self`` to a ``p``-direction,
+        updating both states; **round 2 delegates to the 1-stage ``OrgMorphism.then``**
+        on the inner coalgebras (exactly as ``then_static``/``parallel`` delegate their
+        second round). This is the general ``pc`` composite on which the functoriality of
+        a two-stage ``Phi`` (``leapfrog.Phileap``) rests -- the K=2 case of the audit that
+        ``org.OrgMorphism.then`` supports at K=1 (sec.spring_second_pass). Requires
+        ``self.tgt_poly`` and ``other.src_poly`` to agree.
+        """
+
+        def new_step(s):
+            s_self, s_other = s
+            act_self, fiber_self = self.step(s_self)
+            act_other, fiber_other = other.step(s_other)
+
+            composed_act = PolyMap(
+                src=act_self.src,
+                tgt=act_other.tgt,
+                position_action=lambda i: act_other.on_position(act_self.on_position(i)),
+                direction_action=lambda i, d_r: act_self.on_direction(
+                    i, act_other.on_direction(act_self.on_position(i), d_r)
+                ),
+                label=f"{act_self.label};{act_other.label}",
+            )
+
+            def fiber(i):                       # i: p-position
+                j, at_self = fiber_self(i)      # j: q-position
+                k, at_other = fiber_other(j)    # k: r-position
+
+                def at_pos(d_r):                # d_r: r-direction at k
+                    d_q, inner_other = at_other(d_r)   # d_q: q-direction; inner_other: round 2
+                    d_p, inner_self = at_self(d_q)     # d_p: p-direction; inner_self: round 2
+                    return d_p, inner_self.then(inner_other)  # round 2: 1-stage org then
+
+                return k, at_pos
+
+            return composed_act, fiber
+
+        return OrgMorphism2(self.src_poly, other.tgt_poly, (self.state, other.state), new_step)
 
     def parallel(self, other: "OrgMorphism2") -> "OrgMorphism2":
         """Monoidal product: two ``org^(2)`` morphisms run side by side."""
