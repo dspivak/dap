@@ -242,7 +242,14 @@ intermediate stages and Butcher weights. RK4 is non-symplectic — fine here; th
 multi-stage construction does not require it. (Whether `sarr → org^(K)` is a
 *functor* — cf. `rmk.multistage` — is left open for every `K`; the code provides the
 datatype, instances at `K = 2` (leapfrog) and `K = 4` (RK4), and composition —
-tested, not a proof.)
+parallel, `then_static`, and the sequential `then` on which functoriality rests. With
+`then` in hand, the paper's second-pass audit (`sec.spring_second_pass`) — which at
+`K = 1` gives the functoriality evidence in `test_composition.py` — now runs for the
+multi-stage functors too: `test_multistage_functoriality.py` checks
+`Phi(compose_chain) == Phi(tensor).then(Phi(chain_wire))` for `Phileap` (`org^(2)`) and
+`Phirk4` (`org^(4)`), and both passes agree exactly. So the "tested" now covers
+preservation of *sequential* composition — evidence for the K-stage functoriality, still
+not a proof.)
 
 ## License
 
