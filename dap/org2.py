@@ -192,6 +192,62 @@ class OrgMorphism2:
         )
 
 
+# ---- structure morphisms: identity and symmetry, lifted to two stages ----
+#
+# The ``org^(2)`` analogues of ``org.identity`` / ``org.braiding``. Each is a two-round
+# stateless coalgebra whose **round 2 is the 1-stage structure map** on the inner
+# coalgebra -- exactly the delegation ``then``/``parallel`` already use. They are the
+# unit for ``OrgMorphism2.then`` and the braiding for ``OrgMorphism2.parallel``, so
+# ``org^(2)(p, q)`` is a symmetric monoidal category (``test_monoidal_laws``).
+
+
+def identity(poly) -> OrgMorphism2:
+    """The identity ``id_p : p -> p`` in ``org^(2)`` -- the unit for ``then`` (K = 2)."""
+    from .org import identity as _identity_org
+    from .polynomial import identity_poly_map
+
+    def step(s):
+        act = identity_poly_map(poly)
+
+        def fiber(in_pos):
+            def at_pos(in_dir):
+                return in_dir, _identity_org(poly)  # round 2: the 1-stage identity
+
+            return in_pos, at_pos
+
+        return act, fiber
+
+    return OrgMorphism2(poly, poly, None, step)
+
+
+def braiding(p, q) -> OrgMorphism2:
+    """The symmetry ``sigma_{p,q} : p (x) q -> q (x) p`` in ``org^(2)`` (K = 2)."""
+    from .org import braiding as _braiding_org
+
+    src = DirichletProduct(p, q)
+    tgt = DirichletProduct(q, p)
+    swap = PolyMap(
+        src=src,
+        tgt=tgt,
+        position_action=lambda i: (i[1], i[0]),
+        direction_action=lambda i, d: (d[1], d[0]),
+        label="braiding",
+    )
+
+    def step(s):
+        def fiber(in_pos):
+            out_pos = (in_pos[1], in_pos[0])
+
+            def at_pos(in_dir):
+                return (in_dir[1], in_dir[0]), _braiding_org(p, q)  # round 2: 1-stage swap
+
+            return out_pos, at_pos
+
+        return swap, fiber
+
+    return OrgMorphism2(src, tgt, None, step)
+
+
 def org2_from_integrator(arr, intg2) -> OrgMorphism2:
     """Turn a two-stage integrator into an ``org^(2)`` morphism (the K=2 analog of
     ``functors.Phi`` / ``prop.integrator_to_org``).

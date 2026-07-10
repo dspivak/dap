@@ -227,6 +227,68 @@ class OrgMorphismK:
         )
 
 
+# ---- structure morphisms: identity and symmetry, general K rounds ----
+#
+# The K-round analogues of ``org.identity`` / ``org.braiding`` (and the ``org^(2)``
+# versions), built by the same recursion as ``then``/``parallel``: each round is the
+# structure map, and ``rest`` is the ``(K-1)``-round structure map when ``K > 1`` or
+# the (trivial) new macro-state when ``K = 1``. They are the unit for ``then`` and the
+# braiding for ``parallel`` at every K, so ``org^(K)`` is a symmetric monoidal category
+# (``test_monoidal_laws``). Both are stateless (``None``): pure rewiring, no dynamics.
+
+
+def identity(poly, K: int) -> OrgMorphismK:
+    """The identity ``id_p : p -> p`` in ``org^(K)`` -- the unit for ``then`` at K rounds."""
+    from .polynomial import identity_poly_map
+
+    def make(rounds_left: int) -> OrgMorphismK:
+        def step(s):
+            act = identity_poly_map(poly)
+
+            def fiber(in_pos):
+                def at_pos(in_dir):
+                    rest = s if rounds_left == 1 else make(rounds_left - 1).with_state(s)
+                    return in_dir, rest
+
+                return in_pos, at_pos
+
+            return act, fiber
+
+        return OrgMorphismK(poly, poly, rounds_left, None, step)
+
+    return make(K)
+
+
+def braiding(p, q, K: int) -> OrgMorphismK:
+    """The symmetry ``sigma_{p,q} : p (x) q -> q (x) p`` in ``org^(K)`` (K rounds)."""
+    src = DirichletProduct(p, q)
+    tgt = DirichletProduct(q, p)
+    swap = PolyMap(
+        src=src,
+        tgt=tgt,
+        position_action=lambda i: (i[1], i[0]),
+        direction_action=lambda i, d: (d[1], d[0]),
+        label="braiding",
+    )
+
+    def make(rounds_left: int) -> OrgMorphismK:
+        def step(s):
+            def fiber(in_pos):
+                out_pos = (in_pos[1], in_pos[0])
+
+                def at_pos(in_dir):
+                    rest = s if rounds_left == 1 else make(rounds_left - 1).with_state(s)
+                    return (in_dir[1], in_dir[0]), rest
+
+                return out_pos, at_pos
+
+            return swap, fiber
+
+        return OrgMorphismK(src, tgt, rounds_left, None, step)
+
+    return make(K)
+
+
 def orgK_from_integrator(arr, intg) -> OrgMorphismK:
     """Turn a K-stage integrator into an ``org^(K)`` morphism (the K-fold analog of
     ``functors.Phi`` / ``org2.org2_from_integrator``).

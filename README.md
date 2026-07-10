@@ -251,6 +251,25 @@ multi-stage functors too: `test_multistage_functoriality.py` checks
 preservation of *sequential* composition — evidence for the K-stage functoriality, still
 not a proof.)
 
+**`org^(K)` is a symmetric monoidal category, and `Phi` preserves `⊗`.** A functor needs
+a *category* to land in, and a *monoidal* functor a *monoidal* one — so preserving `;`
+(above) is only half the story. Sequential composition makes `org^(K)` a category only
+with an identity and the associativity/unit laws; it is *monoidal* only with the
+interchange law between `then` and `parallel`, and *symmetric* only with a braiding.
+`org.py`/`org2.py`/`orgK.py` now carry the missing structure maps — the **identity
+coalgebra** (the unit for `then`) and the **braiding** `σ: p⊗q → q⊗p` (the swap) — and
+`test_monoidal_laws.py` checks the full symmetric-monoidal-category laws (unit,
+associativity, interchange, braiding involution + naturality) at `K = 1, 2, 4` on
+stateful toy coalgebras. Each holds *on the nose in observable behavior* and *up to the
+canonical retupling of the multiplied state spaces* `S₁ × S₂` — which is exactly the
+coherence isomorphism (associator / interchanger / unitor) of the monoidal category.
+Complementing PR #1's preservation of `;`, `test_monoidal_functoriality.py` checks the
+`⊗`-half — `Phi(tensor(A,B)) == Phi(A).parallel(Phi(B))`, up to the *productor*
+`cot(ℝ^{a+b}) ≅ cot(ℝ^a) ⊗ cot(ℝ^b)` (`prop.cot_monoidal`) — for `Phiconf`, `Phiphase`,
+`Phileap` and `Phirk4`. Together: the evidence that `Phi : sarr → org^(K)` is a
+*symmetric monoidal functor* — still not a proof, but now the target is a verified
+category and both structure-preservation halves (`;` and `⊗`) are audited.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
