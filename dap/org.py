@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Tuple
 
-from .polynomial import PolyMap, PolyValue
+from .polynomial import DirichletProduct, PolyMap, PolyValue
 
 
 # Step signature, def.pq_coalg, in fully-curried Moore form (sec.dynamics_functor):
@@ -213,3 +213,75 @@ class OrgMorphism:
             state=(self.state, other.state),
             step=new_step,
         )
+
+
+# ---- structure morphisms: the identity and the symmetry (sec.org) ----
+#
+# ``then``/``parallel`` are the composition and the monoidal product; to state the
+# *laws* that make ``org(p, q)`` a symmetric monoidal category one also needs the
+# unit for ``then`` (the identity coalgebra) and the braiding for ``parallel`` (the
+# swap). Both are **stateless** structure maps: they carry no dynamics, only rewire
+# positions forward and directions backward, so their state is the trivial ``None``
+# (which ``jax`` pytrees flatten to no leaves -- exactly the unit ``I`` of the state
+# monoid ``S1 x S2``, so ``identity.then(a)`` recovers ``a``'s state on the nose up to
+# the canonical ``I x S ~= S``). These are the coherence isomorphisms of the monoidal
+# category made concrete; the laws they satisfy are checked in ``test_monoidal_laws``.
+
+
+def identity(poly) -> OrgMorphism:
+    """The identity morphism ``id_p : p -> p`` in ``org`` -- the unit for ``then``.
+
+    Emits the incoming position unchanged, returns the incoming direction unchanged,
+    and never mutates its (trivial) state. It is the coalgebra whose action is
+    ``identity_poly_map(p)`` at every tick. ``identity(p).then(a) == a`` and
+    ``a.then(identity(r)) == a`` in observable behavior, with the state wrapped by the
+    unit iso ``None x S ~= S`` (``test_monoidal_laws``).
+    """
+    from .polynomial import identity_poly_map
+
+    def step(s):
+        act = identity_poly_map(poly)
+
+        def fiber(in_pos):
+            def at_pos(in_dir):
+                return in_dir, s  # trivial state, unchanged
+
+            return in_pos, at_pos
+
+        return act, fiber
+
+    return OrgMorphism(src_poly=poly, tgt_poly=poly, state=None, step=step)
+
+
+def braiding(p, q) -> OrgMorphism:
+    """The symmetry ``sigma_{p,q} : p (x) q -> q (x) p`` in ``org`` (sec.org).
+
+    The stateless coalgebra that swaps the two factors: forward it sends a position
+    ``(i_p, i_q)`` to ``(i_q, i_p)``; backward it sends a ``q (x) p``-direction
+    ``(d_q, d_p)`` to the ``p (x) q``-direction ``(d_p, d_q)``. It is an involution up
+    to the swap (``braiding(p, q).then(braiding(q, p)) == identity(p (x) q)``) and is
+    natural in both arguments, making ``parallel`` a *symmetric* monoidal product
+    (``test_monoidal_laws``).
+    """
+    src = DirichletProduct(p, q)
+    tgt = DirichletProduct(q, p)
+    swap = PolyMap(
+        src=src,
+        tgt=tgt,
+        position_action=lambda i: (i[1], i[0]),
+        direction_action=lambda i, d: (d[1], d[0]),
+        label="braiding",
+    )
+
+    def step(s):
+        def fiber(in_pos):
+            out_pos = (in_pos[1], in_pos[0])
+
+            def at_pos(in_dir):  # in_dir: a (q (x) p)-direction (d_q, d_p)
+                return (in_dir[1], in_dir[0]), s
+
+            return out_pos, at_pos
+
+        return swap, fiber
+
+    return OrgMorphism(src_poly=src, tgt_poly=tgt, state=None, step=step)
