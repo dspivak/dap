@@ -1,26 +1,26 @@
-"""``org^(K)``: general K-stage coalgebras ``[p,q]^{∘K}``-Coalg (rmk.multistage).
+"""``pc^(K)``: general K-stage coalgebras ``[p,q]^{∘K}``-Coalg (rmk.multistage).
 
-A morphism in ``org^(K)`` from ``p`` to ``q`` is a coalgebra
+A morphism in ``pc^(K)`` from ``p`` to ``q`` is a coalgebra
 ``β : S → [p,q]^{∘K}(S)`` for the K-fold substitution
 ``[p,q]^{∘K} = [p,q] ◁ … ◁ [p,q]``. In Moore form it is **K interaction rounds**
 per macro-tick. Round 1 emits a ``q``-position, receives a ``q``-direction, returns
 a ``p``-direction, and lands *not* in a new state ``S`` but in an **inner
 ``[p,q]^{∘(K-1)}``-coalgebra** -- an element of ``[p,q]^{∘(K-1)}(S)``; rounds
-``2…K`` run that inner coalgebra. This is exactly ``org2.OrgMorphism2`` one
+``2…K`` run that inner coalgebra. This is exactly ``pc2.PCMorphism2`` one
 dimension up, built recursively rather than by copy-paste: the round-``i`` result
-is the ``(K-i)``-round coalgebra ``org^(K-i)``, and the base case ``K = 1`` is the
-single-stage ``org.OrgMorphism`` (its last round lands directly in a new state).
+is the ``(K-i)``-round coalgebra ``pc^(K-i)``, and the base case ``K = 1`` is the
+single-stage ``pc.PCMorphism`` (its last round lands directly in a new state).
 
 This module is the **general datatype**, independent of any integrator: ``step``
 may be *any* such K-round behavior. A K-stage integrator (RK4, ``rk4.py``) is one
-instance built on top of it via ``orgK_from_integrator``. Composition ``parallel``
-and ``then_static`` mirror ``org.OrgMorphism`` / ``org2.OrgMorphism2``, recursing
+instance built on top of it via ``pcK_from_integrator``. Composition ``parallel``
+and ``pre_static`` mirror ``pc.PCMorphism`` / ``pc2.PCMorphism2``, recursing
 on the remaining rounds.
 
 Caveat: this provides the datatype, its execution, and these two composites
-(tested). The claim that ``sarr → org^(K)`` is a lax monoidal *functor* (the general
+(tested). The claim that ``sarr → pc^(K)`` is a lax monoidal *functor* (the general
 case of rmk.multistage) is conjectural and is **not** proved here -- exactly as for
-``org^(2)``.
+``pc^(2)``.
 """
 
 from __future__ import annotations
@@ -32,8 +32,8 @@ from .polynomial import DirichletProduct, PolyMap
 
 
 @dataclass(frozen=True)
-class OrgMorphismK:
-    """A ``[p,q]^{∘K}``-coalgebra: a morphism in ``org^(K)``, in K-round Moore form.
+class PCMorphismK:
+    """A ``[p,q]^{∘K}``-coalgebra: a morphism in ``pc^(K)``, in K-round Moore form.
 
     ``step(state)`` returns ``(act, fiber)`` with
 
@@ -41,7 +41,7 @@ class OrgMorphismK:
         fiber  : in_pos → (out_pos, at_pos)
         at_pos : in_dir → (out_dir, rest)
 
-    where ``rest`` is the **(K-1)-round inner coalgebra** ``OrgMorphismK`` (its state
+    where ``rest`` is the **(K-1)-round inner coalgebra** ``PCMorphismK`` (its state
     baked in) when ``K > 1``, and the **new macro-state** when ``K = 1``. The field
     ``K`` records how many rounds remain; ``run`` reads it to know when ``rest`` is a
     coalgebra to recurse into versus a final state.
@@ -53,8 +53,8 @@ class OrgMorphismK:
     state: Any
     step: Callable
 
-    def with_state(self, state: Any) -> "OrgMorphismK":
-        return OrgMorphismK(self.src_poly, self.tgt_poly, self.K, state, self.step)
+    def with_state(self, state: Any) -> "PCMorphismK":
+        return PCMorphismK(self.src_poly, self.tgt_poly, self.K, state, self.step)
 
     # ---- execution ----
 
@@ -73,7 +73,7 @@ class OrgMorphismK:
             out_dir, rest = at_pos(in_dir_froms[i](out_pos))
             out_poss.append(out_pos)
             out_dirs.append(out_dir)
-            coalg = rest  # an inner OrgMorphismK for i < K-1; the new state for i = K-1
+            coalg = rest  # an inner PCMorphismK for i < K-1; the new state for i = K-1
         return out_poss, out_dirs, coalg  # after the loop, coalg is the new macro-state
 
     def run_one(self, in_pos, in_dir_from):
@@ -86,42 +86,48 @@ class OrgMorphismK:
         )
         return out_poss, new_state
 
-    # ---- composition (mirrors org.OrgMorphism / org2.OrgMorphism2, lifted to K rounds) ----
+    # ---- composition (mirrors pc.PCMorphism / pc2.PCMorphism2, lifted to K rounds) ----
 
-    def then_static(self, outer: PolyMap) -> "OrgMorphismK":
-        """Compose every round's output through a static poly map ``outer`` (sec.org)."""
+    def pre_static(self, before: PolyMap) -> "PCMorphismK":
+        """Pre-compose a static polynomial map ``before : o -> p``, giving ``o -> q``
+        (sec.pc), in every one of the ``K`` rounds.
+
+        Each round reads its incoming ``o``-position through ``before`` and pushes
+        the ``p``-direction it returns on to an ``o``-direction; see
+        ``pc.PCMorphism.pre_static``.
+        """
 
         def new_step(s):
             inner_act, inner_fiber = self.step(s)
             composed_act = PolyMap(
-                src=outer.src,
+                src=before.src,
                 tgt=inner_act.tgt,
-                position_action=lambda i: inner_act.on_position(outer.on_position(i)),
-                direction_action=lambda i, d: outer.on_direction(
-                    i, inner_act.on_direction(outer.on_position(i), d)
+                position_action=lambda i: inner_act.on_position(before.on_position(i)),
+                direction_action=lambda i, d: before.on_direction(
+                    i, inner_act.on_direction(before.on_position(i), d)
                 ),
-                label=f"{outer.label};{inner_act.label}",
+                label=f"{before.label};{inner_act.label}",
             )
 
-            def fiber(i_outer):
-                inner_pos = outer.on_position(i_outer)
+            def fiber(i_before):
+                inner_pos = before.on_position(i_before)
                 inner_out_pos, inner_at_pos = inner_fiber(inner_pos)
 
-                def at_pos(d_outer_tgt):
-                    out_dir_inner, rest = inner_at_pos(d_outer_tgt)
-                    out_dir = outer.on_direction(i_outer, out_dir_inner)
+                def at_pos(d_tgt):
+                    out_dir_inner, rest = inner_at_pos(d_tgt)
+                    out_dir = before.on_direction(i_before, out_dir_inner)
                     # recurse into the remaining rounds; pass the state through at K = 1
-                    new_rest = rest.then_static(outer) if self.K > 1 else rest
+                    new_rest = rest.pre_static(before) if self.K > 1 else rest
                     return out_dir, new_rest
 
                 return inner_out_pos, at_pos
 
             return composed_act, fiber
 
-        return OrgMorphismK(outer.src, self.tgt_poly, self.K, self.state, new_step)
+        return PCMorphismK(before.src, self.tgt_poly, self.K, self.state, new_step)
 
-    def parallel(self, other: "OrgMorphismK") -> "OrgMorphismK":
-        """Monoidal product: two ``org^(K)`` morphisms run side by side (sec.org)."""
+    def parallel(self, other: "PCMorphismK") -> "PCMorphismK":
+        """Monoidal product: two ``pc^(K)`` morphisms run side by side (sec.pc)."""
         if self.K != other.K:
             raise ValueError(f"parallel needs equal stage counts, got {self.K} and {other.K}")
 
@@ -157,7 +163,7 @@ class OrgMorphismK:
 
             return act, fiber
 
-        return OrgMorphismK(
+        return PCMorphismK(
             DirichletProduct(self.src_poly, other.src_poly),
             DirichletProduct(self.tgt_poly, other.tgt_poly),
             self.K,
@@ -166,16 +172,16 @@ class OrgMorphismK:
         )
 
 
-def orgK_from_integrator(arr, intg) -> OrgMorphismK:
-    """Turn a K-stage integrator into an ``org^(K)`` morphism (the K-fold analog of
-    ``functors.Phi`` / ``org2.org2_from_integrator``).
+def pcK_from_integrator(arr, intg) -> PCMorphismK:
+    """Turn a K-stage integrator into an ``pc^(K)`` morphism (the K-fold analog of
+    ``functors.Phi`` / ``pc2.pc2_from_integrator``).
 
     Round ``i`` runs the interpretation ``Phi'`` at ``reads[i]`` and reads the
     parameter covector ``xi_Q``; ``advances[i]`` produces the next intermediate. The
     rounds are assembled recursively: round 1 lands in the ``(K-1)``-round inner
-    ``org^(K-1)`` coalgebra (built by the same recursion at the next stage), and the
-    final round (``K = 1``) lands in a new macro-state -- so ``org^(K)`` is built the
-    same way ``org`` is, just from a K-stage integrator.
+    ``pc^(K-1)`` coalgebra (built by the same recursion at the next stage), and the
+    final round (``K = 1``) lands in a new macro-state -- so ``pc^(K)`` is built the
+    same way ``pc`` is, just from a K-stage integrator.
     """
     from .functors import phi_box_poly
     from .interpretation import smooth_interpretation
@@ -187,7 +193,7 @@ def orgK_from_integrator(arr, intg) -> OrgMorphismK:
     K = intg.K
     reads, advances = intg.reads, intg.advances
 
-    def make(level: int, mid: Any) -> OrgMorphismK:
+    def make(level: int, mid: Any) -> PCMorphismK:
         rounds_left = K - level
 
         def step(state):
@@ -224,6 +230,6 @@ def orgK_from_integrator(arr, intg) -> OrgMorphismK:
 
             return act, fiber
 
-        return OrgMorphismK(src_p, tgt_p, rounds_left, mid, step)
+        return PCMorphismK(src_p, tgt_p, rounds_left, mid, step)
 
     return make(0, intg.init(Q))

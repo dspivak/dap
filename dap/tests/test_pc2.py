@@ -1,8 +1,8 @@
-"""General org^(2) datatype and its composition (org2.py).
+"""General pc^(2) datatype and its composition (pc2.py).
 
-`Phileap` is now an instance of the general two-stage coalgebra `OrgMorphism2`.
+`Phileap` is now an instance of the general two-stage coalgebra `PCMorphism2`.
 These tests exercise the *general* structure (not leapfrog-specific): that the
-two-round execution composes correctly under `parallel` and `then_static`.
+two-round execution composes correctly under `parallel` and `pre_static`.
 """
 
 import jax.numpy as jnp
@@ -13,7 +13,7 @@ from dap.arrangement import SmoothArrangement
 from dap.functors import Phiphase
 from dap.integrator import Integrator2
 from dap.leapfrog import Phileap
-from dap.org2 import OrgMorphism2, org2_from_integrator
+from dap.pc2 import PCMorphism2, pc2_from_integrator
 from dap.polynomial import identity_poly_map
 from dap.rvect import diagonal
 
@@ -33,9 +33,9 @@ _IN_POS0 = (jnp.zeros(0), trivial_omega(0))  # closed position
 _IN_DIR0 = (jnp.zeros(0), jnp.zeros(0))                        # closed direction
 
 
-def test_phileap_is_a_general_org2_morphism():
+def test_phileap_is_a_general_pc2_morphism():
     """Leapfrog is now an instance of the general datatype, not a bespoke class."""
-    assert isinstance(Phileap(_oscillator(1.0)), OrgMorphism2)
+    assert isinstance(Phileap(_oscillator(1.0)), PCMorphism2)
 
 
 def test_parallel_runs_two_systems_independently():
@@ -60,11 +60,11 @@ def test_parallel_runs_two_systems_independently():
         np.testing.assert_allclose(np.asarray(got[1]), np.asarray(want[1]), atol=1e-10)
 
 
-def test_then_static_identity_is_a_noop():
+def test_pre_static_identity_is_a_noop():
     """Post-composing both rounds with the identity poly map changes nothing."""
     o = _oscillator(0.7)
     base = Phileap(o)
-    comp = base.then_static(identity_poly_map(base.tgt_poly))
+    comp = base.pre_static(identity_poly_map(base.tgt_poly))
 
     sb = sc = (jnp.array([1.0]), jnp.array([0.3]))
     for _ in range(15):
@@ -74,7 +74,7 @@ def test_then_static_identity_is_a_noop():
     np.testing.assert_allclose(np.asarray(sc[1]), np.asarray(sb[1]), atol=1e-10)
 
 
-def test_org2_from_integrator_is_general():
+def test_pc2_from_integrator_is_general():
     """The builder works for ANY two-stage integrator, not just leapfrog: a
     'two phase-Euler steps' Integrator2 equals running Phiphase twice."""
 
@@ -93,7 +93,7 @@ def test_org2_from_integrator_is_general():
     )
 
     o = _oscillator(0.6)
-    A = org2_from_integrator(o, two_phase)
+    A = pc2_from_integrator(o, two_phase)
     B = Phiphase(o)
 
     s = (jnp.array([1.0]), jnp.array([0.2]))

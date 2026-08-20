@@ -1,8 +1,8 @@
-"""Classical RK4 as a four-stage integrator ``org^(4)`` (rmk.multistage, ell = 4).
+"""Classical RK4 as a four-stage integrator ``pc^(4)`` (rmk.multistage, ell = 4).
 
 RK4 is ONE ``IntegratorK`` (K = 4) -- a single ``Store∘S ⇒ cot^{◁4}`` rule, the
 ``ell = 4`` case of the multi-stage integrator the remark proposes -- pushed through
-``orgK.orgK_from_integrator`` to an ``org^(4)`` morphism, exactly parallel to the
+``pcK.pcK_from_integrator`` to an ``pc^(4)`` morphism, exactly parallel to the
 two-stage leapfrog story (``leapfrog.py``). It integrates the first-order flow
 
     ẋ = f(x),      f(x) = -sharpR_x(ξ_Q(x)),
@@ -22,7 +22,7 @@ evaluations
 
 For ``ẋ = -A x`` these stages collect to ``x' = [I - hA + (hA)²/2 - (hA)³/6 +
 (hA)⁴/24] x``, the degree-4 Taylor polynomial of ``e^{-hA}`` -- the signature of
-genuine RK4, with global error ``O(h⁴)`` (``test_orgk.py`` checks the ``h⁴`` rate).
+genuine RK4, with global error ``O(h⁴)`` (``test_pck.py`` checks the ``h⁴`` rate).
 
 RK4 is **non-symplectic** -- fine here: it is what the multi-stage construction
 gives, and what the gyroscope blog uses; symplecticity is not required.
@@ -94,7 +94,7 @@ def rk4_integrator(h: float = 0.1) -> IntegratorK:
 def rk4_gyro_integrator(
     h: float = 0.1, drag: float = 0.0, gamma: float = 0.0, J=None, gyro_block=None
 ) -> IntegratorK:
-    """Classical RK4 on the gyro *phase* system, an ``org^(4)`` integrator (rmk.multistage).
+    """Classical RK4 on the gyro *phase* system, an ``pc^(4)`` integrator (rmk.multistage).
 
     The faithful-machine integrator: it carries the *same* forces as
     ``gyro_phase_integrator`` (springs and rod gravity in the potential ``U``, quadratic
@@ -108,7 +108,7 @@ def rk4_gyro_integrator(
     with ``dU`` the framework covector ``xi_Q`` evaluated by the interpretation at each
     stage's position (so it includes any open-port forcing), ``F`` the per-gyro quadratic
     drag (``quadratic_drag_kick``), and ``gamma`` a scalar or per-component vector. The
-    four ``org^(4)`` rounds are the four force evaluations ``k1..k4``; ``finish`` does
+    four ``pc^(4)`` rounds are the four force evaluations ``k1..k4``; ``finish`` does
     ``(q,xi) + (h/6)(k1 + 2k2 + 2k3 + k4)``.
 
     Non-symplectic (RK4 is); ``drag``/``gamma`` may be traced, ``J``/``gyro_block`` are

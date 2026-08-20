@@ -39,7 +39,7 @@ from .interpretation import trivial_omega
 from .arrangement import SmoothArrangement
 from .functors import Phiphase
 from .learning import parameterized_map, train
-from .org import OrgMorphism
+from .pc import PCMorphism
 from .rvect import diagonal, euclidean
 
 _IN_POS = (jnp.zeros(0), trivial_omega(0))
@@ -83,7 +83,7 @@ PENDULUM: Tuple[Callable[[Array], Array], int] = (lambda q: 1.0 - jnp.cos(q[0]),
 # ---------------------------------------------------------------------------
 
 
-def trajectory(O: OrgMorphism, q0: Array, p0: Array, T: int) -> List[Array]:
+def trajectory(O: PCMorphism, q0: Array, p0: Array, T: int) -> List[Array]:
     """Iterate the closed coalgebra ``c = O`` from ``(q0, p0)`` for ``T`` steps
     (ex.y_coalgebra_trajectory); return the states ``s_t = (q_t, p_t)`` as flat
     ``R^{2 dim}`` arrays."""
@@ -186,7 +186,7 @@ def identify(
 def one_step_error(
     params: Array,
     F: Callable[[Array, Array], Array],
-    O: OrgMorphism,
+    O: PCMorphism,
     dim: int,
     m: float,
     *,

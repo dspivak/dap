@@ -1,4 +1,4 @@
-"""Leapfrog as a two-stage integrator org^(2) (leapfrog.py; cf. rmk.multistage).
+"""Leapfrog as a two-stage integrator pc^(2) (leapfrog.py; cf. rmk.multistage).
 
 Same harmonic chain as the wave test, run with the symplectic two-stage
 integrator (velocity Verlet):

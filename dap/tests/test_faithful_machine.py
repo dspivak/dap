@@ -93,6 +93,33 @@ def test_classifier_runs_and_is_differentiable():
     assert all(bool(np.all(np.isfinite(np.asarray(g)))) for g in grads.values())
 
 
+def test_hard_drive_and_fast_training_stay_finite():
+    """Over-driving the machine must not produce NaN, by either of two routes.
+
+    *Geometry*: the rod potential is only defined for tilts ``|q| < L``; before
+    ``rod_gravity`` continued it past that, a large drive returned NaN, which Adam's
+    moments then carried through every remaining step -- ``train`` reported a NaN history
+    and did not raise.
+
+    *Sign*: drag is the only dissipative term ``Phirk4gyro`` carries, so while it was a
+    free scalar Adam drove it negative (``-0.68`` by epoch 3 here) and the resulting
+    anti-damping blew the rollout up a few epochs later. ``log_drag`` keeps it positive.
+    The epoch budget below is past where that run diverged, so it is the sign fix -- not
+    a short run -- that keeps the history finite.
+    """
+    cfg = make_hex_config(3, 3, n_classes=4, settle=8)
+    p = init_params(cfg, seed=0)
+
+    rng = np.random.default_rng(2)
+    hard = jnp.asarray(3.0 * rng.standard_normal((16, cfg.n_in)))  # drive amplitude ~ L
+    assert np.all(np.isfinite(np.asarray(output_readout(p, hard, cfg))))
+
+    Xtr, Ytr = make_strokes(256, T=12, n_classes=4, seed=0)
+    for seed in (0, 1):
+        _p, hist = train(cfg, Xtr, Ytr, epochs=12, batch=64, lr=3e-2, seed=seed)
+        assert np.all(np.isfinite(hist))
+
+
 def test_faithful_machine_trains_loss_decreases():
     """It trains end-to-end: minibatch Adam through the full Phirk4gyro rollout reduces the
     loss. Per the goal this is only a trainability sanity -- NO accuracy claim (the machine

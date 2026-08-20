@@ -111,7 +111,7 @@ def _frames(a, dynamics, height=13):
     amax = max(float(np.max(np.abs(a))), 1e-12)
     mid = height // 2               # axis row
     up, down = mid, height - 1 - mid  # rows available above / below the axis
-    label = "Phileap (org^(2))" if dynamics == "leapfrog" else f"Phi{dynamics}"
+    label = "Phileap (pc^(2))" if dynamics == "leapfrog" else f"Phi{dynamics}"
     bodies = []
     for t in range(T):
         grid = [[" "] * K for _ in range(height)]
@@ -254,7 +254,7 @@ def run_chain(dynamics, K, m, kappa, init_kind, steps, animate=False):
                 print(f"  ? could not write {path!r}: {exc}")
 
     space = "T*R^%d" % K if dynamics in ("phase", "leapfrog") else "R^%d" % K
-    name = "Phileap (org^(2))" if dynamics == "leapfrog" else f"Phi{dynamics}"
+    name = "Phileap (pc^(2))" if dynamics == "leapfrog" else f"Phi{dynamics}"
     print(f"\nbuilt  wire_{K}(Part,...,Part) : I -> box,  {name},  state = {space}")
     print(f"  q(0)   = {_vec(a[0])}")
     print(f"  q({steps:>3}) = {_vec(a[-1])}")
@@ -287,7 +287,7 @@ def run_graph(dynamics, V, edges, m, kappa, init_kind, steps):
         from .leapfrog import Phileap
         O = Phileap(arr)
         state = (q0, jnp.zeros(V))
-        print(f"\nbuilt  {arr.label} : I -> I,  Phileap (org^(2)),  state = T*R^{V}")
+        print(f"\nbuilt  {arr.label} : I -> I,  Phileap (pc^(2)),  state = T*R^{V}")
         traj = [np.asarray(q0)]
         for _ in range(steps):
             _, _, state = O.with_state(state).run_one(_IN_POS_CLOSED, lambda op: _IN_DIR_CLOSED)

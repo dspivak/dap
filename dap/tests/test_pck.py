@@ -1,15 +1,15 @@
-"""General ``org^(K)`` datatype + RK4 as ``org^(4)`` (orgK.py, rk4.py; rmk.multistage).
+"""General ``pc^(K)`` datatype + RK4 as ``pc^(4)`` (pcK.py, rk4.py; rmk.multistage).
 
-``OrgMorphismK`` is the K-fold substitution ``[p,q]^{∘K}``, the general case of the
-two-stage ``OrgMorphism2``. These tests exercise:
+``PCMorphismK`` is the K-fold substitution ``[p,q]^{∘K}``, the general case of the
+two-stage ``PCMorphism2``. These tests exercise:
 
-* the *general* structure -- ``parallel`` and ``then_static`` compose correctly over
+* the *general* structure -- ``parallel`` and ``pre_static`` compose correctly over
   the K rounds (here K = 4, RK4 instances);
-* **subsumption** -- ``K = 1`` reproduces the single-stage ``Phiconf`` (org), and
-  ``K = 2`` reproduces leapfrog (``org^(2)``), so the general machinery contains both;
+* **subsumption** -- ``K = 1`` reproduces the single-stage ``Phiconf`` (pc), and
+  ``K = 2`` reproduces leapfrog (``pc^(2)``), so the general machinery contains both;
 * **RK4 is really RK4** -- one macro-tick equals a hand-written RK4 step, and the
   global error of the staged ``Phirk4`` falls like ``h^4`` (halving ``h`` cuts the
-  error by ~16x). The ``h^4`` rate is the falsifiable proof that the four ``org^(4)``
+  error by ~16x). The ``h^4`` rate is the falsifiable proof that the four ``pc^(4)``
   rounds carry the right intermediate positions and Butcher weights.
 """
 
@@ -22,7 +22,7 @@ from dap.functors import Phiconf, Phirk4
 from dap.integrator import IntegratorK, configuration_integrator
 from dap.interpretation import trivial_omega
 from dap.leapfrog import Phileap
-from dap.orgK import OrgMorphismK, orgK_from_integrator
+from dap.pcK import PCMorphismK, pcK_from_integrator
 from dap.polynomial import identity_poly_map
 from dap.rk4 import rk4_integrator
 from dap.rvect import diagonal, euclidean
@@ -64,10 +64,10 @@ def _oscillator(omega2):
 # ---------------------------------------------------------------------------
 
 
-def test_phirk4_is_a_general_orgK_morphism_with_K_4():
+def test_phirk4_is_a_general_pcK_morphism_with_K_4():
     """RK4 is an instance of the general datatype, with four interaction rounds."""
     O = Phirk4(_well(jnp.eye(2)))
-    assert isinstance(O, OrgMorphismK)
+    assert isinstance(O, PCMorphismK)
     assert O.K == 4
 
 
@@ -79,7 +79,7 @@ def test_run_one_returns_K_out_positions():
 
 
 # ---------------------------------------------------------------------------
-# Subsumption: K = 1 is org, K = 2 is leapfrog.
+# Subsumption: K = 1 is pc, K = 2 is leapfrog.
 # ---------------------------------------------------------------------------
 
 
@@ -94,9 +94,9 @@ def _as_K1(intg):
 
 
 def test_K1_reproduces_phiconf():
-    """The K = 1 case of the general machinery IS the single-stage org (Phiconf)."""
+    """The K = 1 case of the general machinery IS the single-stage pc (Phiconf)."""
     arr = _well(jnp.diag(jnp.array([1.0, 2.0, 4.0])))
-    A = orgK_from_integrator(arr, _as_K1(configuration_integrator()))
+    A = pcK_from_integrator(arr, _as_K1(configuration_integrator()))
     B = Phiconf(arr)
 
     sa = sb = jnp.array([1.0, -0.5, 0.3])
@@ -127,9 +127,9 @@ def _leapfrog_K():
 
 
 def test_K2_reproduces_leapfrog():
-    """The K = 2 case reproduces leapfrog exactly -- the same step as org^(2) Phileap."""
+    """The K = 2 case reproduces leapfrog exactly -- the same step as pc^(2) Phileap."""
     osc = _oscillator(0.8)
-    A = orgK_from_integrator(osc, _leapfrog_K())
+    A = pcK_from_integrator(osc, _leapfrog_K())
     B = Phileap(osc)
 
     sa = sb = (jnp.array([1.0]), jnp.array([0.3]))
@@ -165,11 +165,11 @@ def test_parallel_runs_two_systems_independently():
     np.testing.assert_allclose(np.asarray(A_state[1]), np.asarray(s2), atol=1e-12)
 
 
-def test_then_static_identity_is_a_noop():
+def test_pre_static_identity_is_a_noop():
     """Post-composing every round with the identity poly map changes nothing."""
     o = _well(jnp.diag(jnp.array([1.0, 2.0])))
     base = Phirk4(o, 0.1)
-    comp = base.then_static(identity_poly_map(base.tgt_poly))
+    comp = base.pre_static(identity_poly_map(base.tgt_poly))
 
     sb = sc = jnp.array([1.0, -0.4])
     for _ in range(15):
@@ -206,7 +206,7 @@ def test_rk4_is_fourth_order():
 
     Integrated against the closed form e^{-AT} q0 over a fixed horizon T; the ratio of
     successive errors approaches 16 (and stays well above 8 = h^3), the signature of a
-    genuine 4th-order method running through the four org^(4) rounds.
+    genuine 4th-order method running through the four pc^(4) rounds.
     """
     A = jnp.diag(jnp.array([1.0, 2.0, 5.0]))
     arr = _well(A)

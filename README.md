@@ -34,14 +34,14 @@ After `pip install -e .` the `dap` and `dap-demo` commands are on your PATH (no
 |---|---|
 | `rvect.py` | reactive vector spaces (position-dependent sharp) |
 | `arrangement.py` | a smooth adaptive arrangement (a morphism of `sarr`) |
-| `polynomial.py`, `org.py` | polynomials and `[p,q]`-coalgebras (Moore form) |
+| `polynomial.py`, `pc.py` | polynomials and `[p,q]`-coalgebras (Moore form) |
 | `interpretation.py` | the shared, integrator-free polynomial interpretation |
 | `integrator.py` | configuration and phase integrators, the two-stage `Integrator2`, the K-stage `IntegratorK` |
-| `functors.py` | the dynamics functors `Phiconf`, `Phiphase` (and `Phirk4`, RK4 as `org^(4)`) |
-| `org2.py` | general two-stage coalgebras `[p,q]^{∘2}` (`org^(2)`) + composition |
-| `orgK.py` | general K-stage coalgebras `[p,q]^{∘K}` (`org^(K)`) + composition |
-| `leapfrog.py` | leapfrog as a two-stage integrator → `org^(2)` (higher-order symplectic) |
-| `rk4.py` | classical RK4 as a four-stage integrator → `org^(4)` (`Phirk4`; non-symplectic) |
+| `functors.py` | the dynamics functors `Phiconf`, `Phiphase` (and `Phirk4`, RK4 as `pc^(4)`), plus `phi_laxator`, the lax monoidal comparison |
+| `pc2.py` | general two-stage coalgebras `[p,q]^{∘2}` (`pc^(2)`) + composition |
+| `pcK.py` | general K-stage coalgebras `[p,q]^{∘K}` (`pc^(K)`) + composition |
+| `leapfrog.py` | leapfrog as a two-stage integrator → `pc^(2)` (higher-order symplectic) |
+| `rk4.py` | classical RK4 as a four-stage integrator → `pc^(4)` (`Phirk4`; non-symplectic) |
 | `wiring.py` | compose boxes in `sarr` (chains, graphs, tensor) |
 | `learning.py` | gradient descent with backpropagation |
 | `demo.py`, `build.py` | run the worked examples / build your own |
@@ -56,7 +56,7 @@ heat equation and leapfrog.
 
 ## Extensions (beyond the paper)
 
-Five further constructions **reuse** the functorial core above but add content
+Six further constructions **reuse** the functorial core above but add content
 that is *not* part of the paper's formal development. They demonstrate that the
 primitives compose — toy-scale (`gyroscope.py` is a harmonic surrogate inspired by
 Bull & Achour, and `gyroscope_faithful.py` is the equation-faithful version of it) —
@@ -66,10 +66,11 @@ not implementations of paper results, and not claims to beat dedicated tools.
 | construction | what it reuses (paper) | what it adds (not in the paper) |
 |---|---|---|
 | `Phidamped` (`integrator.py`, `functors.py`) | the phase integrator + the paper's damping 1-form `ex.damping_one_form` | wiring `c·ζ`, `ζ(q,ξ)=(ξ,0)`, into the integrator as heavy-ball momentum (the paper records `ζ` but it "plays no further role" there) |
+| `logic.py` | `Phiconf` + the degenerate, non-symmetric reactions `def.rvect` already allows + `compose_seq` (`prop.suboperads`) | a MOSFET whose drain dependence lies in the sharp's kernel (non-reciprocity from the reaction, not the potential), and CMOS NAND / SR-latch / inverter chains built by wiring them |
 | `system_id.py` | `Phiphase` + the learner of `sec.dl_warmup` | a nonlinear pendulum, a tanh-MLP predictor, libration sampling — identifying a flow map |
 | `pinn.py` | `Phiconf` + the learner of `sec.dl_warmup` | a deep-Ritz Dirichlet energy and a coordinate MLP — a physics-informed net for 1D Poisson |
 | `gyroscope.py` (`Phigyro`) | `Phiphase` + the graph-Laplacian spring potential of `sec.graph_laplacian` (written directly, **not** assembled by the prism wiring) + the learner of `sec.dl_warmup` | 2-D harmonic gyros with on-site gravity, a gyroscopic skew 1-form, and a linear encoder/decoder + Adam — a harmonic surrogate of the Bull & Achour gyroscope digit-classifier |
-| `gyroscope_faithful.py` (`Phirk4gyro`) | the prism graph-wiring of `sec.graph_laplacian` (now at `R²`) + RK4 as `org^(4)` (`rmk.multistage`) + the 1-form vector space (`prop.one_forms_vector_space`, `rmk.adam`) | the Bull & Achour machine built **equation-faithfully**: hex springs *from the wiring*, nonlinear rod gravity, quadratic-drag + per-gyro precession 1-forms, RK4 phase integration — **no accuracy claim**; the result is the springs→0 ablation |
+| `gyroscope_faithful.py` (`Phirk4gyro`) | the prism graph-wiring of `sec.graph_laplacian` (now at `R²`) + RK4 as `pc^(4)` (`rmk.multistage`) + the 1-form vector space (`prop.one_forms_vector_space`, `rmk.adam`) | the Bull & Achour machine built **equation-faithfully**: hex springs *from the wiring*, nonlinear rod gravity, quadratic-drag + per-gyro precession 1-forms, RK4 phase integration — **no accuracy claim**; the result is the springs→0 ablation |
 
 The integrator alone turns one convex arrangement into gradient descent,
 conservative oscillation, or heavy-ball momentum (`Phiconf`/`Phiphase`/`Phidamped`)
@@ -84,7 +85,7 @@ phase integrator's 1-form (`Phigyro`), and the input "nudge" through the open po
 The forward dynamics *is* `Phigyro` of one harmonic arrangement. Training backprops
 through the length-`T` rollout with `jax.grad`; since `cot`'s backward part is
 reverse-mode AD, this realizes the same chain-rule pullbacks that `cot` encodes — an
-AD-equivalence, not a literal `OrgMorphism.then` composition. On UCI PenDigits
+AD-equivalence, not a literal `PCMorphism.then` composition. On UCI PenDigits
 (`python -m dap.gyroscope`) the surrogate reaches **~0.83** validation accuracy with a
 3×4 gyro grid and **~0.87** with 4×5; the blog reports 0.834 for its (richer) machine
 (linear baseline 0.562, LSTM 0.896), shown for context — we do **not** claim to
@@ -107,12 +108,14 @@ assembled categorically:
 - **spring coupling** — the prism graph-wiring (`compose_graph`, `sec.graph_laplacian`)
   generalized to `R²` gyros: the graph-Laplacian potential *emerges from composition*,
   it is not a hand-written `U`;
-- **rod gravity** — the nonlinear on-site potential `−g·√(L²−|q|²)`;
+- **rod gravity** — the nonlinear on-site potential `−g·√(L²−|q|²)`, continued by its
+  tangent line past the rod's horizontal limit `|q| = L` (still restoring there, so an
+  over-driven gyro is pulled back rather than turning the rollout into `NaN`);
 - **mass** in the reactive sharp; **quadratic air drag** and **gyroscopic precession**
-  as two 1-forms; **RK4** as `Phirk4gyro` (RK4 on the phase state, an `org^(4)` morphism);
+  as two 1-forms; **RK4** as `Phirk4gyro` (RK4 on the phase state, an `pc^(4)` morphism);
   the **input nudge** through the open input port.
 
-The rollout genuinely runs `Phirk4gyro → orgK_from_integrator → smooth_interpretation`,
+The rollout genuinely runs `Phirk4gyro → pcK_from_integrator → smooth_interpretation`,
 with the force `= jax.grad(U)` (the framework's backward pass) — no physics is computed
 by hand outside the functor.
 
@@ -131,12 +134,13 @@ ablation, not their experiment):
 | per-gyro mass, per-edge stiffness | uniform mass / stiffness (one scalar each) |
 | ~100-step 2-channel PenDigits strokes | short synthetic `make_strokes` (generator-as-spec, no download) |
 | trained to a benchmark accuracy | **no accuracy claim** — only that the loss decreases under training |
-| RK4 ODE solver | RK4 as `org^(4)` — matches the solver *and* factors through the framework |
+| RK4 ODE solver | RK4 as `pc^(4)` — matches the solver *and* factors through the framework |
 
 **Beyond-paper caveats** (banner-labeled in the code): the quadratic-drag and
 gyroscopic 1-forms are monoidal over `⊕` but natural only over a *subcategory* of
-`rvect` (per-gyro `O(2)`) — which `rmk.adam` explicitly sanctions ("it just lives over a
-smaller `Q`"); whether `sarr → org^(K)` is a *functor* is left open (datatype +
+`rvect` — both are written through the Euclidean identification `Q ≅ Q*`, so drag needs
+per-gyro `O(2)` and the gyroscopic term, which must also commute with `J`, per-gyro
+`SO(2)` — which `rmk.adam` explicitly sanctions ("it just lives over a smaller `Q`"); whether `sarr → pc^(K)` is a *functor* is left open (datatype +
 instances + composition, not a proof); and the encoder/decoder **drive and readout are
 the hand-added open I/O interface** — the *coupled physics* factors through the
 framework, the I/O does not claim to.
@@ -191,11 +195,11 @@ prompt like:
 > coalgebras in Moore form (a state plus a step function), never materializing the
 > internal hom. Provide two integrators — configuration (descent) and phase
 > (Hamiltonian). Store each covector field as a callable `ω: ℝᵈ → ℝᵈ` evaluated
-> exactly (no affine/quadratic approximation). Also build the two-stage semantics org^(2): a [p,q]^{∘2}-
+> exactly (no affine/quadratic approximation). Also build the two-stage semantics pc^(2): a [p,q]^{∘2}-
 > coalgebra is two emit/receive rounds per macro-tick, where the first round lands
 > in an inner one-stage coalgebra (the substitution [p,q] ◁ [p,q]) rather than a
-> new state, with composition (parallel, then_static). A two-stage integrator then
-> gives leapfrog (velocity Verlet) as one org^(2) instance — derived from org^(2),
+> new state, with composition (parallel, pre_static). A two-stage integrator then
+> gives leapfrog (velocity Verlet) as one pc^(2) instance — derived from pc^(2),
 > not hardcoded. Then build the worked examples — Newton's method, gradient descent
 > with backpropagation, the wave equation (symplectic phase, plus leapfrog), the heat
 > equation — and check that each reproduces the paper's recurrences. Use ℝᵈ for
@@ -214,7 +218,7 @@ Spelled out, the recipe is:
    materialize the internal hom.
 6. Pick an **integrator** — a state space plus an update from an incoming covector
    — configuration or phase.
-7. Build the two-stage semantics **`org^(2)`** (two emit/receive rounds; the
+7. Build the two-stage semantics **`pc^(2)`** (two emit/receive rounds; the
    substitution `[p,q]^{∘2} = [p,q] ◁ [p,q]`, the first round landing in an inner
    one-stage coalgebra) **with composition**; leapfrog is then one instance.
 8. Instantiate the worked examples and check they reproduce the paper's recurrences.
@@ -232,14 +236,14 @@ flow: stable for small steps, a genuine algorithm. `Phiphase` (wave) is the
 presented position `q~ = q + sharp(p)` and evaluates the force there, so the energy
 stays bounded — `dap` shows the wave staying stable directly. `leapfrog` (velocity
 Verlet) is a higher-order symplectic alternative that evaluates the force twice per
-step, so it lands in `org^(2)` rather than `org`. `org2.py` builds the general
+step, so it lands in `pc^(2)` rather than `pc`. `pc2.py` builds the general
 two-stage coalgebra `[p,q]^{∘2}` with composition (`leapfrog.py` is one instance),
-and `orgK.py` generalizes it to the K-fold substitution `[p,q]^{∘K}` — the `ℓ`-round
-coalgebras of `rmk.multistage`. `rk4.py` realizes classical RK4 as one `org^(4)`
+and `pcK.py` generalizes it to the K-fold substitution `[p,q]^{∘K}` — the `ℓ`-round
+coalgebras of `rmk.multistage`. `rk4.py` realizes classical RK4 as one `pc^(4)`
 instance: its global error falls like `h⁴` (a test checks the rate against the closed
 form `e^{-At}`), the falsifiable evidence that the four rounds carry the right
 intermediate stages and Butcher weights. RK4 is non-symplectic — fine here; the
-multi-stage construction does not require it. (Whether `sarr → org^(K)` is a
+multi-stage construction does not require it. (Whether `sarr → pc^(K)` is a
 *functor* — cf. `rmk.multistage` — is left open for every `K`; the code provides the
 datatype, instances at `K = 2` (leapfrog) and `K = 4` (RK4), and composition —
 tested, not a proof.)

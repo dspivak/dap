@@ -9,8 +9,8 @@ of cor.functor, both built from a shared interpretation plus an integrator.
 
 from .rvect import ReactiveVectorSpace
 from .arrangement import SmoothArrangement
-from .polynomial import Yon, Cot, DirichletProduct, PolyMap
-from .org import OrgMorphism
+from .polynomial import Yon, Cot, DirichletProduct, PolyMap, nest_left, unnest_left
+from .pc import PCMorphism
 from .integrator import (
     Integrator,
     Integrator2,
@@ -23,9 +23,10 @@ from .integrator import (
 from .interpretation import smooth_interpretation
 from .functors import (
     Phi, Phiconf, Phidamped, Phigyro, Phiphase, Phirk4, Phirk4gyro, cot_object, cot_map,
+    phi_laxator,
 )
-from .org2 import OrgMorphism2, org2_from_integrator
-from .orgK import OrgMorphismK, orgK_from_integrator
+from .pc2 import PCMorphism2, pc2_from_integrator
+from .pcK import PCMorphismK, pcK_from_integrator
 from .leapfrog import Phileap, leapfrog_integrator
 from .rk4 import rk4_gyro_integrator, rk4_integrator
 from . import functors
@@ -39,6 +40,7 @@ from . import system_id
 from . import pinn
 from . import gyroscope
 from . import gyroscope_faithful
+from . import logic
 
 __all__ = [
     "ReactiveVectorSpace",
@@ -47,7 +49,9 @@ __all__ = [
     "Cot",
     "DirichletProduct",
     "PolyMap",
-    "OrgMorphism",
+    "nest_left",
+    "unnest_left",
+    "PCMorphism",
     "Integrator",
     "Integrator2",
     "IntegratorK",
@@ -67,12 +71,13 @@ __all__ = [
     "leapfrog_integrator",
     "rk4_integrator",
     "rk4_gyro_integrator",
-    "OrgMorphism2",
-    "org2_from_integrator",
-    "OrgMorphismK",
-    "orgK_from_integrator",
+    "PCMorphism2",
+    "pc2_from_integrator",
+    "PCMorphismK",
+    "pcK_from_integrator",
     "cot_object",
     "cot_map",
+    "phi_laxator",
     "functors",
     "wiring",
     "learning",
@@ -81,4 +86,5 @@ __all__ = [
     "pinn",
     "gyroscope",
     "gyroscope_faithful",
+    "logic",
 ]

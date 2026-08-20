@@ -26,7 +26,7 @@ potential is the spring+gravity arrangement and whose 1-form carries damping and
 precession. Training backprops through the rollout with ``jax.grad``; because
 ``cot``'s backward part is reverse-mode AD (functors.cot_map), this gradient realizes
 the same chain-rule pullbacks that ``cot`` encodes -- an AD-equivalence, *not* a
-literal ``OrgMorphism.then`` composition. (Reserve ``org^(K)`` / rmk.multistage for
+literal ``PCMorphism.then`` composition. (Reserve ``pc^(K)`` / rmk.multistage for
 genuine multi-stage *integrators* like leapfrog/RK4; the training rollout is not one.)
 """
 
@@ -153,7 +153,7 @@ def make_config(rows: int = 3, cols: int = 4, **kw) -> GyroConfig:
 # ---------------------------------------------------------------------------
 
 
-def rod_gravity(g: float, L: float):
+def rod_gravity(g: float, L: float, margin: float = 1e-3):
     """Nonlinear rod-gravity on-site potential for a 2-D gyro (the blog's rod geometry).
 
     A gyro tip displaced by ``q`` (horizontal, ``r = |q|``) on a rod of length ``L`` sits
@@ -166,11 +166,27 @@ def rod_gravity(g: float, L: float):
     horizontal (``r -> L``), and its small-tilt limit is ``(g/L) q`` -- exactly the
     harmonic well the surrogate used (spring constant ``g/L``). Plug into
     ``wiring.compose_graph(..., onsite=rod_gravity(g, L))`` so each gyro carries it.
-    Valid for ``|q| < L`` (a rod cannot tilt past horizontal); run with tilts in range.
+
+    The formula is only defined for ``|q| < L`` -- a rod cannot tilt past horizontal --
+    and a bare ``sqrt`` returns ``NaN`` beyond it, which under ``jax.grad`` poisons the
+    whole rollout (and, silently, every trained parameter) the first time any gyro is
+    driven that far. So outside ``r^2 <= (1 - margin) L^2`` we continue ``U`` by its
+    tangent line in ``r^2``: writing ``a = |q|^2`` and ``a_clamp = min(a, (1-margin)L^2)``,
+
+        U_grav(q) = -g * ( sqrt(L^2 - a_clamp) - (a - a_clamp) / (2 sqrt(L^2 - a_clamp)) ).
+
+    This is exactly the rod potential wherever the rod geometry is defined; past the
+    clamp it is the ``C^1`` continuation, whose force ``-g q / sqrt(margin) L`` still
+    points back upright (and grows with ``|q|``), so an over-driven gyro is pulled back
+    rather than producing ``NaN``. ``margin`` therefore caps the stiffness of the wall.
     """
+    a_max = (1.0 - margin) * L ** 2
 
     def U(q: Array) -> Array:
-        return -g * jnp.sqrt(L ** 2 - jnp.sum(q ** 2))
+        a = jnp.sum(q ** 2)
+        a_clamp = jnp.minimum(a, a_max)          # keeps the sqrt argument >= margin * L^2
+        height = jnp.sqrt(L ** 2 - a_clamp)
+        return -g * (height - (a - a_clamp) / (2.0 * height))
 
     return U
 
@@ -271,8 +287,8 @@ def classify(params: Dict[str, Array], x_seq: Array, cfg: GyroConfig) -> Array:
     zeros_out = jnp.zeros(cfg.n_out)
 
     def step(state, force):
-        org = O.with_state(state)
-        _out_pos, _out_dir, new_state = org.run_one(_IN_POS, lambda op: (zeros_out, force))
+        pc = O.with_state(state)
+        _out_pos, _out_dir, new_state = pc.run_one(_IN_POS, lambda op: (zeros_out, force))
         return new_state, None
 
     # encoder forces during the stroke, then zero forcing while the network settles

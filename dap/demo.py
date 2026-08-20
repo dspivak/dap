@@ -109,11 +109,11 @@ def demo_leapfrog():
     for _ in range(400):
         _, _, state = O.with_state(state).run_one(_IN_POS, bdy)
         peak = max(peak, float(np.max(np.abs(np.asarray(state[0])))))
-    print(f"  wave (leapfrog, org^(2)):   peak |q| {peak0:.2f} -> max {peak:.2f} over 400 steps  (bounded -- stable)")
+    print(f"  wave (leapfrog, pc^(2)):   peak |q| {peak0:.2f} -> max {peak:.2f} over 400 steps  (bounded -- stable)")
 
 
 def demo_rk4():
-    # RK4 as one org^(4) instance: four force evaluations per macro-tick. On the
+    # RK4 as one pc^(4) instance: four force evaluations per macro-tick. On the
     # gradient flow qdot = -A q the global error falls like h^4 (4th order).
     from dap.functors import Phirk4
     A = np.diag([1.0, 2.0, 5.0])
@@ -133,7 +133,7 @@ def demo_rk4():
         return float(np.linalg.norm(np.asarray(s) - exact))
 
     e8, e16 = err(8), err(16)
-    print(f"  rk4 (org^(4)):              error {e8:.1e} -> {e16:.1e} as h halves  (ratio {e8 / e16:.0f} ~ 16, i.e. 4th order)")
+    print(f"  rk4 (pc^(4)):              error {e8:.1e} -> {e16:.1e} as h halves  (ratio {e8 / e16:.0f} ~ 16, i.e. 4th order)")
 
 
 def demo_optimizers():
@@ -192,7 +192,7 @@ def demo_gyroscope():
 
 def demo_faithful():
     # The faithful Bull & Achour machine (gyroscope_faithful.py): hex springs from the prism
-    # wiring, nonlinear rod gravity, quadratic drag + per-gyro precession, RK4 (org^(4)). The
+    # wiring, nonlinear rod gravity, quadratic drag + per-gyro precession, RK4 (pc^(4)). The
     # headline is the springs->0 ablation, NOT accuracy -- a one-line categorical wiring fact.
     from dap.gyroscope_faithful import make_hex_config, init_params, output_readout
 
@@ -202,7 +202,7 @@ def demo_faithful():
     drive = jnp.asarray(0.2 * rng.standard_normal((8, cfg.n_in)))
     on = float(jnp.linalg.norm(output_readout(p, drive, cfg)))
     off = float(jnp.linalg.norm(output_readout({**p, "log_kappa": jnp.array(-100.0)}, drive, cfg)))
-    print(f"  faithful gyro (org^(4) RK4): output |readout| {on:.2f} with springs -> {off:.0e} with springs frozen")
+    print(f"  faithful gyro (pc^(4) RK4): output |readout| {on:.2f} with springs -> {off:.0e} with springs frozen")
     print("    (springs->0 severs input->output: the blog's 'Take 1' as a wiring fact; no accuracy claim)")
 
 
@@ -212,9 +212,9 @@ def main():
     demo_gradient_descent()
     demo_newton()
     demo_heat()
-    print("\nPhiphase -- Hamiltonian dynamics (org):")
+    print("\nPhiphase -- Hamiltonian dynamics (pc):")
     demo_wave()
-    print("\nMulti-stage integrators (org^(K)):")
+    print("\nMulti-stage integrators (pc^(K)):")
     demo_leapfrog()
     demo_rk4()
     print("\nExtensions (beyond the paper; the same pieces, composed):")

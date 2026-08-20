@@ -1,13 +1,16 @@
 """Quadratic-drag 1-form (EXTENSION; integrator.quadratic_drag_kick / gyro_phase_integrator).
 
-The blog's air drag -- force ``~ -|v| v`` -- as a 1-form ``omega_drag(q,xi)=(|v| v, 0)``
-taken *per gyro*. We verify the rmk.adam split that makes it a legitimate integrator:
+The blog's air drag -- force ``~ -|v| v`` -- as a 1-form
+``omega_drag(q,xi) = (|v| flat(v), 0) : Q^* (+) Q`` taken *per gyro* (``flat`` the
+Euclidean flat; ``quadratic_drag_kick`` computes it in coordinates). We verify the
+rmk.adam split that makes it a legitimate integrator:
 
 * MONOIDAL over ``(+)`` -- each gyro drags on its own velocity (the non-negotiable
   compositionality of rmk.adam);
-* NATURAL only over per-gyro orthogonal maps -- a "smaller Q", which rmk.adam
-  explicitly sanctions; the third test shows the restriction is *real* (a non-orthogonal
-  per-gyro map breaks naturality), so it is not a vacuous claim;
+* NATURAL only over per-gyro orthogonal maps -- the norm and the flat both come from
+  the Euclidean structure of a gyro block -- a "smaller Q", which rmk.adam explicitly
+  sanctions; the third test shows the restriction is *real* (a non-orthogonal per-gyro
+  map breaks naturality), so it is not a vacuous claim;
 * and the drag dissipates energy in a free rollout.
 """
 

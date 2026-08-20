@@ -1,4 +1,4 @@
-"""RK4 on the gyro phase system as org^(4) (rk4.rk4_gyro_integrator / Phirk4gyro; Phase 3).
+"""RK4 on the gyro phase system as pc^(4) (rk4.rk4_gyro_integrator / Phirk4gyro; Phase 3).
 
 The faithful machine's integrator: classical RK4 stepping the phase ODE
 ``qdot = sharp(xi), xidot = -dU - drag*F(v) - gamma*(J v)`` -- the same forces as
@@ -6,7 +6,7 @@ The faithful machine's integrator: classical RK4 stepping the phase ODE
 
 * 4th-order accuracy: on a harmonic oscillator (closed form via matrix exp) the global
   error falls like h^4 (ratios -> 16) -- the falsifiable proof it is genuine RK4 run
-  through the four org^(4) rounds on the PHASE state;
+  through the four pc^(4) rounds on the PHASE state;
 * one macro-tick equals a hand-rolled RK4 step of the full phase ODE *including* the
   quadratic-drag and per-gyro precession 1-forms.
 """

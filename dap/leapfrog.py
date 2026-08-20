@@ -2,16 +2,16 @@
 
 Leapfrog is now ONE ``Integrator2`` — a single ``Store∘S ⇒ cot^{◁2}`` natural
 transformation, the multi-stage integrator the remark proposes — pushed through
-the general ``org2.org2_from_integrator`` to yield an ``org^(2)`` morphism. This
+the general ``pc2.pc2_from_integrator`` to yield an ``pc^(2)`` morphism. This
 is exactly parallel to the 1-stage story (a 1-stage ``Integrator`` + ``functors.Phi``
-gives an ``org`` morphism). The kick/drift/kick lives once, in the integrator:
+gives an ``pc`` morphism). The kick/drift/kick lives once, in the integrator:
 
     read1(q, ξ)   = q
     advance       : ξ½ = ξ − ½ ξ_Q(q),   q' = q + sharpR_q(ξ½)     (mid = (q', ξ½))
     read2(q', ξ½) = q'
     finish        : ξ' = ξ½ − ½ ξ_Q(q')                            (new = (q', ξ'))
 
-so the two force evaluations ξ_Q(q) and ξ_Q(q') are the two ``org^(2)`` rounds.
+so the two force evaluations ξ_Q(q) and ξ_Q(q') are the two ``pc^(2)`` rounds.
 Constant (mass-like) ``sharpR`` — the physics case.
 """
 
@@ -21,7 +21,7 @@ import jax.numpy as jnp
 
 from .arrangement import SmoothArrangement
 from .integrator import Integrator2
-from .org2 import OrgMorphism2, org2_from_integrator
+from .pc2 import PCMorphism2, pc2_from_integrator
 
 
 def leapfrog_integrator() -> Integrator2:
@@ -46,6 +46,6 @@ def leapfrog_integrator() -> Integrator2:
     )
 
 
-def Phileap(arr: SmoothArrangement) -> OrgMorphism2:
-    """Leapfrog dynamics of a (closed) arrangement, as an ``org^(2)`` morphism."""
-    return org2_from_integrator(arr, leapfrog_integrator())
+def Phileap(arr: SmoothArrangement) -> PCMorphism2:
+    """Leapfrog dynamics of a (closed) arrangement, as an ``pc^(2)`` morphism."""
+    return pc2_from_integrator(arr, leapfrog_integrator())

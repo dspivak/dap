@@ -139,8 +139,8 @@ def train(
         x = jnp.asarray(x, dtype=float)
         lam = jnp.asarray(lam, dtype=float)
         in_pos = (x, omega_M)
-        org = O.with_state(q)
-        out_pos, _out_dir, new_q = org.run_one(
+        pc = O.with_state(q)
+        out_pos, _out_dir, new_q = pc.run_one(
             in_pos,
             lambda op, lam=lam: (grad_loss(op[0], lam), jnp.zeros(arr.in_dim_N)),
         )

@@ -102,6 +102,32 @@ class PolyMap:
         return self.direction_action(i, d_tgt)
 
 
+def nest_left(items: Sequence):
+    """Left-nest a sequence: ``[a, b, c] |-> ((a, b), c)``.
+
+    ``DirichletProduct`` is built pairwise (``PCMorphism.parallel`` folds from the
+    left), so a position or direction of a ``K``-fold product is a left-nested
+    tuple; this and ``unnest_left`` convert between that shape and a flat list.
+    """
+    items = list(items)
+    if not items:
+        raise ValueError("nest_left: need at least one item")
+    acc = items[0]
+    for x in items[1:]:
+        acc = (acc, x)
+    return acc
+
+
+def unnest_left(value, k: int) -> list:
+    """Inverse of ``nest_left`` for ``k`` factors."""
+    out = []
+    for _ in range(k - 1):
+        value, last = value
+        out.append(last)
+    out.append(value)
+    return out[::-1]
+
+
 def identity_poly_map(p: Poly) -> PolyMap:
     """The identity ``p -> p`` in poly."""
     return PolyMap(

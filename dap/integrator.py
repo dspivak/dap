@@ -5,9 +5,9 @@ By the framework of ch.framework, once the polynomial interpretation
 ``cot(Q)``-parameterized polynomial map, the remaining choice is an
 *integrator*: a state space ``S = F(Q)`` together with a rule that updates the
 current state from an incoming parameter covector ``xi_Q in Q^*``. Each
-integrator induces a semantics ``Psi_intg : Para(cot, poly) -> org``
-(prop.integrator_to_org), and composing with the interpretation gives a
-dynamics functor ``Phi_intg : sarr -> org`` (cor.functor).
+integrator induces a semantics ``Psi_intg : Para(cot, poly) -> pc``
+(prop.integrator_to_pc), and composing with the interpretation gives a
+dynamics functor ``Phi_intg : sarr -> pc`` (cor.functor).
 
 We implement an integrator as three callables bound to the parameter reactive
 vector space ``Q`` at runtime:
@@ -120,13 +120,20 @@ def damped_phase_integrator(damping: float = 0.0) -> Integrator:
 
 
 def quadratic_drag_kick(v, gyro_block: int):
-    """Per-gyro quadratic-drag force ``F(v)_i = |v_i| v_i`` (block Euclidean norm).
+    """Per-gyro quadratic-drag kick ``|v_i| v_i`` in coordinates (block Euclidean norm).
 
     The blog's air drag is a force ``~ -|v| v`` (opposes velocity, magnitude growing
-    with speed squared). As a 1-form ``omega_drag(q, xi) = (|v| v, 0)`` with
-    ``v = sharpR_q(xi)`` and ``|v|`` taken *per gyro* (the Euclidean norm of each
-    ``gyro_block``-dimensional block); fed through the symplectic sharp it adds
-    ``-|v| v`` to the momentum.
+    with speed squared). A 1-form on ``T^*Q`` takes values in ``Q^* (+) Q``, and it is
+    the ``Q^*``-component that drives momentum, so the drag 1-form is
+
+        omega_drag(q, xi) = (|v| flat(v),  0) : Q^* (+) Q,   v = sharpR_q(xi),
+
+    with ``|v|`` taken *per gyro* (the Euclidean norm of each ``gyro_block``-dimensional
+    block) and ``flat : Q -> Q^*`` the Euclidean flat -- ``|v| v`` on its own is a
+    *vector*, not the covector the momentum slot takes. This function returns the kick
+    in coordinates, i.e. with ``flat`` read as the identity matrix; against the flat
+    ``sharpR^{-1} = m`` that the kinetic term uses, that is off by the constant factor
+    ``m``, which the trainable coefficient ``drag`` multiplying it absorbs.
 
     Naturality grounding (rmk.adam -- the monoidality is non-negotiable, the
     naturality may be restricted):
@@ -135,8 +142,9 @@ def quadratic_drag_kick(v, gyro_block: int):
       ``omega_drag`` is block-diagonal, ``omega_{Q(+)W} = omega_Q (+) omega_W``.
       rmk.adam: "The monoidal requirement of integrators cannot be negotiated ...
       each box can compute its own update." Quadratic drag passes this.
-    * NATURAL only over a *subcategory*: ``|v_i|`` is invariant under per-gyro
-      orthogonal maps (``O(2)`` per 2-D gyro), not under a general sharp-equivariant
+    * NATURAL only over a *subcategory*: both the norm ``|v_i|`` and the flat come from
+      the Euclidean structure of each gyro block, so both are equivariant under per-gyro
+      orthogonal maps (``O(2)`` per 2-D gyro) but not under a general sharp-equivariant
       ``rvect``-isomorphism. rmk.adam explicitly allows this -- such a section "is not
       outside the framework; it just lives over a smaller ``Q``" -- here the
       subcategory of Euclidean gyro-spaces with block-orthogonal isomorphisms, the
@@ -165,7 +173,12 @@ def gyro_phase_integrator(
     structure ``J`` (a block-diagonal 90-degree rotation, one ``[[0,-1],[1,0]]``
     block per 2-D gyro), define
 
-        omega_gyro(q, xi) = (gamma * J @ sharpR_q(xi),  0) : Q^* (+) Q.
+        omega_gyro(q, xi) = (gamma * flat(J @ sharpR_q(xi)),  0) : Q^* (+) Q,
+
+    where ``flat : Q -> Q^*`` is the Euclidean flat: ``J @ sharpR_q(xi)`` is a vector
+    in ``Q``, and the momentum slot of a 1-form takes a covector. As with the drag term
+    below, the code computes this in coordinates (``flat`` read as the identity), which
+    rescales it by a constant absorbed into ``gamma``.
 
     Fed through the symplectic sharp (which sends ``(a, b) |-> (b, -a)``,
     eqn.canonical_sharp) it adds ``-gamma * J @ sharpR_q(xi)`` to the momentum: a
@@ -180,10 +193,13 @@ def gyro_phase_integrator(
         (q, xi) |-> ( q + sharpR_q(xi),
                       (1 - c) * xi - xi_Q - gamma * J @ sharpR_q(xi) ),   xi_Q at q~.
 
-    Caveat (why it is beyond the paper): ``omega_gyro`` is a monoidal 1-form only
-    over the subcategory of ``rvect`` whose isomorphisms commute with ``J`` -- the
-    rotor picks out an orientation, breaking the full reactive symmetry the paper's
-    1-forms (``beta``, ``zeta``) enjoy. It is exactly the minimal example that lives
+    Caveat (why it is beyond the paper): ``omega_gyro`` is a monoidal 1-form only over
+    a subcategory of ``rvect``, and it is the flat that costs the naturality, not ``J``
+    alone: the isomorphisms must be per-gyro isometries (to be compatible with ``flat``)
+    *and* commute with ``J``, i.e. per-gyro ``SO(2)`` -- one step below the drag term's
+    ``O(2)``, since a reflection anticommutes with ``J``. The paper's own 1-forms
+    (``beta``, ``zeta``) are written with no such identification and keep the full
+    reactive symmetry. It is exactly the minimal example that lives
     in ``rvect`` but outside the *harmonic* (symmetric-sharp) regime of
     def.arrangement_terminology. (The same rmk.adam principle that justifies the
     quadratic-drag term below applies: ``omega_gyro`` "lives over a smaller ``Q``".)
@@ -239,8 +255,8 @@ class Integrator2:
     * ``read2(Q, mid)``                 -- parameter position emitted in round 2.
     * ``finish(Q, state, mid, xi_Q2)``  -- consume the round-2 covector; new state.
 
-    ``org2.org2_from_integrator`` turns one of these into an ``org^(2)`` morphism,
-    exactly as ``functors.Phi`` turns a 1-stage ``Integrator`` into an ``org`` one.
+    ``pc2.pc2_from_integrator`` turns one of these into an ``pc^(2)`` morphism,
+    exactly as ``functors.Phi`` turns a 1-stage ``Integrator`` into an ``pc`` one.
     """
 
     init: Callable[[ReactiveVectorSpace], Any]
@@ -269,8 +285,8 @@ class IntegratorK:
                                       next intermediate. For ``i = K-1`` this is the
                                       ``finish``: its result is the new macro-state.
 
-    ``orgK.orgK_from_integrator`` turns one of these into an ``org^(K)`` morphism,
-    exactly as ``org2.org2_from_integrator`` does for the two-stage case. The lists
+    ``pcK.pcK_from_integrator`` turns one of these into an ``pc^(K)`` morphism,
+    exactly as ``pc2.pc2_from_integrator`` does for the two-stage case. The lists
     ``reads`` and ``advances`` must have equal length ``K >= 1``; ``K = 1`` recovers
     the single-stage ``Integrator`` (one read, one step).
     """

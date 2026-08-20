@@ -4,8 +4,9 @@ Two small in-framework closures of blog deviations:
 
 * ``rod_gravity(g, L)`` -- the nonlinear rod-geometry on-site potential
   ``-g sqrt(L^2 - |q|^2)``: a restoring well, *nonlinear* (stiffens toward horizontal),
-  whose small-tilt limit is the harmonic well the surrogate used. Plugs into the
-  ``onsite`` hook of ``compose_graph``.
+  whose small-tilt limit is the harmonic well the surrogate used, and which is continued
+  past the rod's horizontal limit rather than returning NaN. Plugs into the ``onsite``
+  hook of ``compose_graph``.
 * per-gyro ``gamma``: a per-component vector gamma makes ``Phigyro`` precess each gyro
   at its own rate (the integrator just broadcasts it against ``J @ v``).
 """
@@ -45,6 +46,27 @@ def test_rod_gravity_stiffens_nonlinearly():
     near = float(jnp.linalg.norm(jax.grad(U)(jnp.array([0.1, 0.0])))) / 0.1   # ~ g/L
     far = float(jnp.linalg.norm(jax.grad(U)(jnp.array([0.9, 0.0])))) / 0.9    # >> g/L
     assert far > 1.5 * near
+
+
+def test_rod_gravity_is_finite_past_horizontal():
+    """Past the rod's horizontal limit ``|q| = L`` the potential is continued by its
+    tangent line, so value and gradient stay finite and still restoring -- a bare
+    ``sqrt`` would return NaN there and (through Adam's moments) poison every
+    parameter of a training run for good."""
+    g, L = 2.0, 3.0
+    U = rod_gravity(g, L)
+    for r in (L, 1.5 * L, 10.0 * L):
+        q = jnp.array([r, 0.0])
+        assert np.isfinite(float(U(q)))
+        grad = np.asarray(jax.grad(U)(q))
+        assert np.all(np.isfinite(grad))
+        assert grad[0] > 0.0            # -dU points back toward upright
+    # ...and inside the rod's range it is still exactly the rod potential
+    for r in (0.0, 0.5, 2.0, 2.9):
+        q = jnp.array([r, 0.0])
+        np.testing.assert_allclose(
+            float(U(q)), -g * float(np.sqrt(L ** 2 - r ** 2)), rtol=1e-9, atol=1e-9
+        )
 
 
 def _free_gyros(V, m=1.0):

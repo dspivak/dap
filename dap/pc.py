@@ -1,8 +1,8 @@
-"""``OrgMorphism`` (sec.org).
+"""``PCMorphism`` (sec.pc).
 
 A Moore-style coalgebraic representation of an ``[p, q]``-coalgebra
 (def.pq_coalg). Following VOCAB design (2)-(3), we never materialize
-the internal hom ``[p, q]``; instead an ``OrgMorphism`` carries:
+the internal hom ``[p, q]``; instead an ``PCMorphism`` carries:
 
 * ``state``: the current state ``s in S``.
 * ``step``:  ``s -> (PolyMap p -> q,  in_dir -> (out_dir, new_state))``.
@@ -26,7 +26,7 @@ from .polynomial import PolyMap, PolyValue
 # The PolyMap component IS act^beta(state) (def.pq_coalg); it
 # duplicates the position/direction logic that the curried closure
 # also exposes, but having it as a first-class poly map makes
-# composition with static poly maps in ``then_static`` clean.
+# composition with static poly maps (``pre_static``/``post_static``) clean.
 StepFn = Callable[
     [Any],
     Tuple[PolyMap,
@@ -37,8 +37,8 @@ StepFn = Callable[
 
 
 @dataclass(frozen=True)
-class OrgMorphism:
-    """An object of the org-bicategory's homset ``org(p, q)``.
+class PCMorphism:
+    """An object of the pc-bicategory's homset ``pc(p, q)``.
 
     Implements the unpacked coalgebra of def.pq_coalg in Moore form.
     Composition is provided as a method rather than via a category
@@ -63,80 +63,136 @@ class OrgMorphism:
         out_dir, new_state = fiber_at_pos(in_dir)
         return out_pos, out_dir, new_state
 
-    def with_state(self, new_state: Any) -> "OrgMorphism":
-        """Return a copy of this OrgMorphism with the state replaced."""
-        return OrgMorphism(
+    def with_state(self, new_state: Any) -> "PCMorphism":
+        """Return a copy of this PCMorphism with the state replaced."""
+        return PCMorphism(
             src_poly=self.src_poly,
             tgt_poly=self.tgt_poly,
             state=new_state,
             step=self.step,
         )
 
-    # ---- composition (sec.org) ----
+    # ---- composition (sec.pc) ----
 
-    def then_static(self, outer: PolyMap) -> "OrgMorphism":
-        """Post-compose with a static polynomial map ``q -> r`` (sec.org).
+    def pre_static(self, before: PolyMap) -> "PCMorphism":
+        """Pre-compose a static polynomial map ``before : o -> p``, giving ``o -> q``.
 
-        The result has the same state set as ``self``; the action on
-        state ``s`` is ``outer o act^beta(s)``.
+        The result has the same state set as ``self``; the action on state ``s``
+        is ``act^beta(s) o before``. (``self`` runs *after* the static map: an
+        ``o``-position is carried to a ``p``-position by ``before`` and then read
+        by ``self``, and the ``p``-direction that comes back is pushed on to an
+        ``o``-direction by ``before``.)
         """
         from .polynomial import PolyMap as _PM
+
+        if before.tgt != self.src_poly:
+            raise ValueError(
+                f"pre_static: target {before.tgt} of the static map "
+                f"!= source {self.src_poly} of this morphism"
+            )
 
         def new_step(s):
             inner_act, inner_fiber = self.step(s)
 
             composed_act = _PM(
-                src=outer.src,
+                src=before.src,
                 tgt=inner_act.tgt,
-                position_action=lambda i: inner_act.on_position(outer.on_position(i)),
-                direction_action=lambda i, d: outer.on_direction(
-                    i, inner_act.on_direction(outer.on_position(i), d)
+                position_action=lambda i: inner_act.on_position(before.on_position(i)),
+                direction_action=lambda i, d: before.on_direction(
+                    i, inner_act.on_direction(before.on_position(i), d)
                 ),
-                label=f"{outer.label};{inner_act.label}",
+                label=f"{before.label};{inner_act.label}",
             )
 
-            def fiber(i_outer):
-                # outer.on_position(i_outer) is the inner-src position.
-                inner_pos = outer.on_position(i_outer)
-                inner_out_pos, inner_at_pos = inner_fiber(inner_pos)
-                # outer's position-action turns inner_out_pos into an outer-tgt position?
-                # No: ``outer`` here is OUTER, going from outer.src to outer.tgt = inner.src.
-                # So we composed inner-after-outer; the new target = inner.tgt.
-                out_pos = inner_out_pos
+            def fiber(i_before):             # i_before: o-position
+                inner_pos = before.on_position(i_before)          # p-position
+                out_pos, inner_at_pos = inner_fiber(inner_pos)    # q-position
 
-                def at_pos(d_outer_tgt):
-                    # d_outer_tgt is in inner.tgt direction-fiber at out_pos.
-                    # Forward through inner_at_pos which expects an inner-tgt direction.
-                    out_dir_inner, new_state = inner_at_pos(d_outer_tgt)
-                    # Push inner-src direction back through outer to get outer-src direction.
-                    out_dir = outer.on_direction(i_outer, out_dir_inner)
-                    return out_dir, new_state
+                def at_pos(d_q):             # d_q: q-direction at out_pos
+                    d_p, new_state = inner_at_pos(d_q)            # p-direction
+                    d_o = before.on_direction(i_before, d_p)      # o-direction
+                    return d_o, new_state
 
                 return out_pos, at_pos
 
             return composed_act, fiber
 
-        return OrgMorphism(
-            src_poly=outer.src,
+        return PCMorphism(
+            src_poly=before.src,
             tgt_poly=self.tgt_poly,
             state=self.state,
             step=new_step,
         )
 
-    def then(self, other: "OrgMorphism") -> "OrgMorphism":
+    def post_static(self, after: PolyMap) -> "PCMorphism":
+        """Post-compose a static polynomial map ``after : q -> r``, giving ``p -> r``.
+
+        The result has the same state set as ``self``; the action on state ``s``
+        is ``after o act^beta(s)``. This is ``then`` in the special case where the
+        second factor carries a single state, i.e. is a polynomial map (sec.pc);
+        the paper's second pass post-composes exactly such a map, the static
+        ``Phi(wire_K)`` (sec.spring_second_pass).
+        """
+        from .polynomial import PolyMap as _PM
+
+        if self.tgt_poly != after.src:
+            raise ValueError(
+                f"post_static: target {self.tgt_poly} of this morphism "
+                f"!= source {after.src} of the static map"
+            )
+
+        def new_step(s):
+            inner_act, inner_fiber = self.step(s)
+
+            composed_act = _PM(
+                src=inner_act.src,
+                tgt=after.tgt,
+                position_action=lambda i: after.on_position(inner_act.on_position(i)),
+                direction_action=lambda i, d_r: inner_act.on_direction(
+                    i, after.on_direction(inner_act.on_position(i), d_r)
+                ),
+                label=f"{inner_act.label};{after.label}",
+            )
+
+            def fiber(i):                    # i: p-position
+                j, inner_at_pos = inner_fiber(i)                  # q-position
+                k = after.on_position(j)                          # r-position
+
+                def at_pos(d_r):             # d_r: r-direction at k
+                    d_q = after.on_direction(j, d_r)              # q-direction at j
+                    return inner_at_pos(d_q)                      # (p-direction, new state)
+
+                return k, at_pos
+
+            return composed_act, fiber
+
+        return PCMorphism(
+            src_poly=self.src_poly,
+            tgt_poly=after.tgt,
+            state=self.state,
+            step=new_step,
+        )
+
+    def then(self, other: "PCMorphism") -> "PCMorphism":
         """Sequential composition in pc: ``self : p -> q`` then ``other : q -> r``,
-        giving ``p -> r`` (sec.org). State spaces multiply.
+        giving ``p -> r`` (sec.pc). State spaces multiply.
 
         Forward, a ``p``-position runs through ``self`` then ``other`` to an
         ``r``-position; backward, an ``r``-direction runs through ``other`` then
         ``self`` to a ``p``-direction, updating both states. This is the general
         ``pc`` composition on which the functoriality of ``Phi`` rests (the
-        second-pass audit, sec.spring_second_pass); ``then_static`` is the special
+        second-pass audit, sec.spring_second_pass); ``post_static`` is the special
         case where ``other`` carries a single state. Requires ``self.tgt_poly``
         and ``other.src_poly`` to agree.
         """
 
         from .polynomial import PolyMap as _PM
+
+        if self.tgt_poly != other.src_poly:
+            raise ValueError(
+                f"then: target {self.tgt_poly} of the first factor "
+                f"!= source {other.src_poly} of the second"
+            )
 
         def new_step(s):
             s_self, s_other = s
@@ -166,15 +222,15 @@ class OrgMorphism:
 
             return composed_act, fiber
 
-        return OrgMorphism(
+        return PCMorphism(
             src_poly=self.src_poly,
             tgt_poly=other.tgt_poly,
             state=(self.state, other.state),
             step=new_step,
         )
 
-    def parallel(self, other: "OrgMorphism") -> "OrgMorphism":
-        """Monoidal parallel composition (sec.org), state-spaces multiply."""
+    def parallel(self, other: "PCMorphism") -> "PCMorphism":
+        """Monoidal parallel composition (sec.pc), state-spaces multiply."""
 
         from .polynomial import PolyMap as _PM, DirichletProduct
 
@@ -207,7 +263,7 @@ class OrgMorphism:
 
             return act, fiber
 
-        return OrgMorphism(
+        return PCMorphism(
             src_poly=DirichletProduct(self.src_poly, other.src_poly),
             tgt_poly=DirichletProduct(self.tgt_poly, other.tgt_poly),
             state=(self.state, other.state),

@@ -1,21 +1,21 @@
-"""``org^(2)``: general two-stage coalgebras ``[p,q]^{∘2}``-Coalg (rmk.multistage).
+"""``pc^(2)``: general two-stage coalgebras ``[p,q]^{∘2}``-Coalg (rmk.multistage).
 
-A morphism in ``org^(2)`` from ``p`` to ``q`` is a coalgebra
+A morphism in ``pc^(2)`` from ``p`` to ``q`` is a coalgebra
 ``β : S → [p,q]([p,q](S))`` for the substitution ``[p,q]^{∘2} = [p,q] ◁ [p,q]``.
 In Moore form it is **two interaction rounds** per macro-tick. The key is the
 substitution: round 1 emits a ``q``-position, receives a ``q``-direction, returns
 a ``p``-direction, and lands *not* in a new state ``S`` but in an **inner 1-stage
-``[p,q]``-coalgebra** — an element of ``[p,q](S)``, i.e. an ``org.OrgMorphism``.
+``[p,q]``-coalgebra** — an element of ``[p,q](S)``, i.e. an ``pc.PCMorphism``.
 Round 2 runs that inner coalgebra and lands in ``S``.
 
 This module is the **general datatype**, independent of any integrator: ``step``
 may be *any* such two-round behavior. A two-stage integrator (leapfrog,
 ``leapfrog.py``) is one instance built on top of it. Composition ``parallel`` and
-``then_static`` mirror ``org.OrgMorphism``, delegating the inner round to the
+``pre_static`` mirror ``pc.PCMorphism``, delegating the inner round to the
 1-stage versions.
 
 Caveat: this provides the datatype, its execution, and these two composites
-(tested). The claim that ``sarr → org^(2)`` is a lax monoidal *functor*
+(tested). The claim that ``sarr → pc^(2)`` is a lax monoidal *functor*
 (the K=2 case of rmk.multistage) is conjectural and is **not** proved here.
 """
 
@@ -24,19 +24,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from .org import OrgMorphism
+from .pc import PCMorphism
 from .polynomial import DirichletProduct, PolyMap
 
 
 @dataclass(frozen=True)
-class OrgMorphism2:
-    """A ``[p,q]^{∘2}``-coalgebra: a morphism in ``org^(2)``, in two-round Moore form.
+class PCMorphism2:
+    """A ``[p,q]^{∘2}``-coalgebra: a morphism in ``pc^(2)``, in two-round Moore form.
 
     ``step(state)`` returns ``(act, fiber)`` with
 
         act    : PolyMap p → q                    -- round-1 action a^β(state)
         fiber  : in_pos → (out_pos, at_pos)
-        at_pos : in_dir → (out_dir, inner)        -- inner : org.OrgMorphism (round 2)
+        at_pos : in_dir → (out_dir, inner)        -- inner : pc.PCMorphism (round 2)
 
     where ``inner`` is the 1-stage coalgebra that round 2 runs.
     """
@@ -46,8 +46,8 @@ class OrgMorphism2:
     state: Any
     step: Callable
 
-    def with_state(self, state: Any) -> "OrgMorphism2":
-        return OrgMorphism2(self.src_poly, self.tgt_poly, state, self.step)
+    def with_state(self, state: Any) -> "PCMorphism2":
+        return PCMorphism2(self.src_poly, self.tgt_poly, state, self.step)
 
     # ---- execution ----
 
@@ -72,40 +72,45 @@ class OrgMorphism2:
         op1, _, op2, _, new_state = self.run_two(in_pos, in_dir_from, in_pos, in_dir_from)
         return op1, op2, new_state
 
-    # ---- composition (mirrors org.OrgMorphism, lifted to two stages) ----
+    # ---- composition (mirrors pc.PCMorphism, lifted to two stages) ----
 
-    def then_static(self, outer: PolyMap) -> "OrgMorphism2":
-        """Compose round-1 and round-2 outputs through a static poly map ``outer``."""
+    def pre_static(self, before: PolyMap) -> "PCMorphism2":
+        """Pre-compose a static polynomial map ``before : o -> p``, giving ``o -> q``.
+
+        Each round reads its incoming ``o``-position through ``before`` and pushes
+        the ``p``-direction it returns on to an ``o``-direction; see
+        ``pc.PCMorphism.pre_static``.
+        """
 
         def new_step(s):
             inner_act, inner_fiber = self.step(s)
             composed_act = PolyMap(
-                src=outer.src,
+                src=before.src,
                 tgt=inner_act.tgt,
-                position_action=lambda i: inner_act.on_position(outer.on_position(i)),
-                direction_action=lambda i, d: outer.on_direction(
-                    i, inner_act.on_direction(outer.on_position(i), d)
+                position_action=lambda i: inner_act.on_position(before.on_position(i)),
+                direction_action=lambda i, d: before.on_direction(
+                    i, inner_act.on_direction(before.on_position(i), d)
                 ),
-                label=f"{outer.label};{inner_act.label}",
+                label=f"{before.label};{inner_act.label}",
             )
 
-            def fiber(i_outer):
-                inner_pos = outer.on_position(i_outer)
+            def fiber(i_before):
+                inner_pos = before.on_position(i_before)
                 inner_out_pos, inner_at_pos = inner_fiber(inner_pos)
 
-                def at_pos(d_outer_tgt):
-                    out_dir_inner, inner_round2 = inner_at_pos(d_outer_tgt)
-                    out_dir = outer.on_direction(i_outer, out_dir_inner)
-                    return out_dir, inner_round2.then_static(outer)
+                def at_pos(d_tgt):
+                    out_dir_inner, inner_round2 = inner_at_pos(d_tgt)
+                    out_dir = before.on_direction(i_before, out_dir_inner)
+                    return out_dir, inner_round2.pre_static(before)
 
                 return inner_out_pos, at_pos
 
             return composed_act, fiber
 
-        return OrgMorphism2(outer.src, self.tgt_poly, self.state, new_step)
+        return PCMorphism2(before.src, self.tgt_poly, self.state, new_step)
 
-    def parallel(self, other: "OrgMorphism2") -> "OrgMorphism2":
-        """Monoidal product: two ``org^(2)`` morphisms run side by side."""
+    def parallel(self, other: "PCMorphism2") -> "PCMorphism2":
+        """Monoidal product: two ``pc^(2)`` morphisms run side by side."""
 
         def new_step(s):
             s1, s2 = s
@@ -135,7 +140,7 @@ class OrgMorphism2:
 
             return act, fiber
 
-        return OrgMorphism2(
+        return PCMorphism2(
             DirichletProduct(self.src_poly, other.src_poly),
             DirichletProduct(self.tgt_poly, other.tgt_poly),
             (self.state, other.state),
@@ -143,15 +148,15 @@ class OrgMorphism2:
         )
 
 
-def org2_from_integrator(arr, intg2) -> OrgMorphism2:
-    """Turn a two-stage integrator into an ``org^(2)`` morphism (the K=2 analog of
-    ``functors.Phi`` / ``prop.integrator_to_org``).
+def pc2_from_integrator(arr, intg2) -> PCMorphism2:
+    """Turn a two-stage integrator into an ``pc^(2)`` morphism (the K=2 analog of
+    ``functors.Phi`` / ``prop.integrator_to_pc``).
 
     Round 1 runs the interpretation ``Phi'`` at ``read1(state)`` and reads the
     parameter covector ``xi_Q1``; ``advance`` produces the intermediate. Round 2 is
-    a genuine **1-stage** ``org.OrgMorphism`` built by ``functors.Phi`` from a
-    1-stage integrator derived from ``read2``/``finish`` — so ``org^(2)`` is
-    assembled the same way ``org`` is, just from a two-stage integrator.
+    a genuine **1-stage** ``pc.PCMorphism`` built by ``functors.Phi`` from a
+    1-stage integrator derived from ``read2``/``finish`` — so ``pc^(2)`` is
+    assembled the same way ``pc`` is, just from a two-stage integrator.
     """
     from .functors import Phi, phi_box_poly
     from .integrator import Integrator
@@ -186,7 +191,7 @@ def org2_from_integrator(arr, intg2) -> OrgMorphism2:
                 xi_N, in_n = in_dir
                 xi_Q1, xi_M, in_m = direction_action(out_m, omega_M, xi_N, in_n)
                 mid = intg2.advance(Q, state, xi_Q1)
-                # round 2: a 1-stage org-morphism from a 1-stage integrator (read2/finish)
+                # round 2: a 1-stage pc-morphism from a 1-stage integrator (read2/finish)
                 round2 = Integrator(
                     init=lambda Q_, m=mid: m,
                     position=lambda Q_, s: intg2.read2(Q_, s),
@@ -200,4 +205,4 @@ def org2_from_integrator(arr, intg2) -> OrgMorphism2:
 
         return act, fiber
 
-    return OrgMorphism2(src_p, tgt_p, intg2.init(Q), step)
+    return PCMorphism2(src_p, tgt_p, intg2.init(Q), step)

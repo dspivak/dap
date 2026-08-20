@@ -14,7 +14,7 @@ assembled categorically:
     quadratic air drag -> a nonlinear 1-form (rmk.adam: monoidal over (+), natural over
                           per-gyro O(2))
     gyroscopic torque  -> the per-gyro skew 1-form (a ``gamma`` vector)
-    RK4 time-stepping  -> ``Phirk4gyro`` = org^(4) on the phase state
+    RK4 time-stepping  -> ``Phirk4gyro`` = pc^(4) on the phase state
     external nudge     -> the open input port (encoder force on the input gyros)
 
 GOAL (see GYRO_BUILD_HANDOFF.md): the **factorization** + the **springs->0 ablation**,
@@ -105,7 +105,10 @@ def faithful_coalgebra(cfg: GyroConfig, p: Dict[str, Array], h: float = 0.1, L: 
     arr = faithful_arrangement(
         cfg, jnp.exp(p["log_m"]), jnp.exp(p["log_kappa"]), jnp.exp(p["log_grav"]), L
     )
-    return Phirk4gyro(arr, h, drag=p["drag"], gamma=jnp.repeat(p["gamma"], 2), J=cfg.J, gyro_block=2)
+    return Phirk4gyro(
+        arr, h, drag=jnp.exp(p["log_drag"]), gamma=jnp.repeat(p["gamma"], 2),
+        J=cfg.J, gyro_block=2,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -115,14 +118,21 @@ def faithful_coalgebra(cfg: GyroConfig, p: Dict[str, Array], h: float = 0.1, L: 
 
 def init_params(cfg: GyroConfig, seed: int = 0, kappa0: float = 0.5, grav0: float = 0.2,
                 drag0: float = 0.1) -> Dict[str, Array]:
-    """Trainable physics (uniform log-mass / log-stiffness / log-gravity, drag, per-gyro
-    gamma) + a linear encoder/decoder. Logs keep mass/stiffness/gravity positive."""
+    """Trainable physics (uniform log-mass / log-stiffness / log-gravity / log-drag,
+    per-gyro gamma) + a linear encoder/decoder.
+
+    Every positive physical quantity is carried in its logarithm, so training cannot flip
+    its sign. Drag needs this as much as the others: the quadratic-drag 1-form is the only
+    dissipative term ``Phirk4gyro`` carries (unlike ``gyro_phase_integrator`` it has no
+    separate damping ``c``), and a negative coefficient makes it anti-damping ``~ +|v| v``
+    -- energy injection growing superlinearly with speed, with nothing left to bound it.
+    """
     rng = np.random.default_rng(seed)
     return {
         "log_m": jnp.array(0.0),
         "log_kappa": jnp.array(float(np.log(kappa0))),
         "log_grav": jnp.array(float(np.log(grav0))),
-        "drag": jnp.array(float(drag0)),
+        "log_drag": jnp.array(float(np.log(drag0))),
         "gamma": jnp.zeros(cfg.V),
         "W_enc": jnp.asarray(0.3 * rng.standard_normal((cfg.n_in, 2))),
         "b_enc": jnp.zeros(cfg.n_in),
@@ -225,6 +235,12 @@ def train(cfg, Xtr, Ytr, *, epochs: int = 10, batch: int = 64, lr: float = 3e-3,
             p, m, v = adam_step(p, grads, m, v, t, lr=lr)
             losses.append(float(loss))
         hist.append(float(np.mean(losses)))
+        if not np.isfinite(hist[-1]):
+            # Adam carries NaN in its moments forever, so a diverged run would
+            # otherwise return a silent NaN history and NaN parameters.
+            raise FloatingPointError(
+                f"training diverged at epoch {ep} (loss {hist[-1]}); lower lr or h"
+            )
         if verbose:
             print(f"  epoch {ep:2d}  loss {hist[-1]:.4f}")
     return p, hist
