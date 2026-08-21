@@ -14,6 +14,13 @@ Four checks:
 Non-symmetric games (rock-paper-scissors) are OUT OF SCOPE by construction --
 they are not potential games -- and the arrangement constructor rejects them;
 we test the rejection, not the dynamics.
+
+LOG COORDINATES (module docstring): one Phiconf step of the log arrangement
+is exactly the multiplicative-weights update ``x * exp(dt * ((A x)_i -
+x^T A x))``; fractions stay positive at a ``dt`` where the standard tick
+overshoots a coordinate below 0; the sum, exactly invariant for the standard
+tick, drifts and the drift shrinks with ``dt``; the two ticks converge to
+each other as ``dt -> 0``.
 """
 
 import jax.numpy as jnp
@@ -21,6 +28,8 @@ import numpy as np
 import pytest
 
 from dap.replicator import (
+    log_replicator_dynamics,
+    log_shahshahani,
     replicator_arrangement,
     replicator_dynamics,
     replicator_step,
@@ -126,3 +135,94 @@ def test_rock_paper_scissors_is_rejected():
     rps = jnp.array([[0.0, -1.0, 1.0], [1.0, 0.0, -1.0], [-1.0, 1.0, 0.0]])
     with pytest.raises(ValueError):
         replicator_arrangement(rps, dt=0.1)
+
+
+# ---------------------------------------------------------------------------
+# Log coordinates (module docstring): the multiplicative-weights reading.
+# ---------------------------------------------------------------------------
+
+
+def _excess(A, x):
+    return A @ x - jnp.dot(x, A @ x)
+
+
+def test_log_one_step_is_multiplicative_weights():
+    """Keystone: one Phiconf step of the log arrangement, read back through
+    x = e^y, is exactly x * exp(dt * ((A x)_i - x^T A x))."""
+    rng = np.random.default_rng(11)
+    for dt in (1.0, 0.05):
+        for _ in range(5):
+            A = _random_symmetric(rng, 4)
+            x = _random_simplex(rng, 4)
+            O = log_replicator_dynamics(A, dt)
+            y_new = replicator_step(O, jnp.log(x))
+            np.testing.assert_allclose(
+                np.asarray(jnp.exp(y_new)),
+                np.asarray(x * jnp.exp(dt * _excess(A, x))),
+                rtol=1e-12,
+            )
+
+
+def test_log_positive_where_standard_tick_overshoots():
+    """Coordination game A = diag(1,1), x = (0.9, 0.1), dt = 2: the standard
+    tick sends x_2 below 0; the log tick keeps every fraction positive."""
+    A = jnp.eye(2)
+    x = jnp.array([0.9, 0.1])
+    dt = 2.0
+    x_std = replicator_step(replicator_dynamics(A, dt), x)
+    assert bool(jnp.any(x_std < 0))
+    y = replicator_step(log_replicator_dynamics(A, dt), jnp.log(x))
+    assert bool(jnp.all(jnp.exp(y) > 0)) and bool(jnp.all(jnp.isfinite(y)))
+
+
+def test_log_sum_drifts_and_shrinks_with_dt():
+    """The trade: the standard tick preserves sum(x) = 1 exactly on the
+    simplex; the log tick's sum drifts, and the drift shrinks with dt over a
+    fixed horizon."""
+    rng = np.random.default_rng(12)
+    A = _random_symmetric(rng, 3)
+    x0 = _random_simplex(rng, 3)
+    horizon = 1.0
+    drift = {}
+    for dt in (0.2, 0.02):
+        O = log_replicator_dynamics(A, dt)
+        y = jnp.log(x0)
+        for _ in range(int(round(horizon / dt))):
+            y = replicator_step(O, y)
+        drift[dt] = abs(float(jnp.sum(jnp.exp(y))) - 1.0)
+    assert drift[0.2] > 1e-6
+    assert drift[0.02] < drift[0.2]
+
+
+def test_log_and_standard_ticks_converge_together():
+    """As dt -> 0 the two readings track the same replicator flow: over a
+    fixed horizon their endpoints approach each other at first order."""
+    rng = np.random.default_rng(13)
+    A = _random_symmetric(rng, 3)
+    x0 = _random_simplex(rng, 3)
+    horizon = 0.5
+    gap = {}
+    for dt in (0.05, 0.01):
+        Os = replicator_dynamics(A, dt)
+        Ol = log_replicator_dynamics(A, dt)
+        xs, y = x0, jnp.log(x0)
+        for _ in range(int(round(horizon / dt))):
+            xs, y = replicator_step(Os, xs), replicator_step(Ol, y)
+        gap[dt] = float(jnp.max(jnp.abs(xs - jnp.exp(y))))
+    assert gap[0.01] < gap[0.05]
+    assert gap[0.01] < 0.02
+
+
+def test_log_sharp_is_pushforward_and_psd_on_simplex():
+    """sharpR^log_y = J sharpR_x J^T with J = diag(1/x): the same geometry in
+    the new chart; and it is symmetric PSD at simplex points."""
+    rng = np.random.default_rng(14)
+    for _ in range(5):
+        x = _random_simplex(rng, 4)
+        J = jnp.diag(1.0 / x)
+        S_std = shahshahani(4, dt=0.3).sharp_at(x)
+        S_log = log_shahshahani(4, dt=0.3).sharp_at(jnp.log(x))
+        np.testing.assert_allclose(np.asarray(S_log), np.asarray(J @ S_std @ J), atol=1e-10)
+        np.testing.assert_allclose(np.asarray(S_log), np.asarray(S_log).T, atol=1e-12)
+        eigs = np.linalg.eigvalsh(np.asarray(S_log))
+        assert eigs.min() > -1e-10

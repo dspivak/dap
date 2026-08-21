@@ -60,6 +60,26 @@ would symmetrize the game, changing the dynamics. Hawk-Dove is covered
 despite its textbook matrix being non-symmetric, because replicator
 dynamics is invariant under column shifts ``A -> A + 1 c^T`` and every
 2x2 game is column-equivalent to a symmetric one (see the tests).
+
+LOG COORDINATES (cf. reaction_network, encoding 5): the same flow can be run
+in the chart ``y = log x``, pushing the Shahshahani sharp forward along the
+diffeomorphism (``sharp' = J sharp J^T``, ``J = diag(1/x)``):
+
+    sharpR^log_y = dt * (diag(1/x) - 1 1^T),      x = e^y,
+
+symmetric, and PSD on the simplex (Cauchy--Schwarz), with the SAME potential
+``U = -(1/2) x^T A x`` read through the chart. One step is then
+
+    y_i -> y_i + dt * ((A x)_i - x^T A x),
+    x_i -> x_i * exp(dt * ((A x)_i - x^T A x)),
+
+the forward-Euler replicator step in log coordinates (the multiplicative-
+weights update). Fractions are POSITIVE BY CONSTRUCTION at any ``dt`` --
+where the standard tick can overshoot a coordinate below 0 -- but the sum
+``sum(x) = 1``, exactly invariant for the standard tick, now drifts by
+``O(dt^2)`` per step: the same positivity-for-conservation trade as the
+Petri encodings 4 vs 5. No doubled state is needed here, unlike encoding 5,
+because the replicator field IS a sharp-gradient (potential game).
 """
 
 from __future__ import annotations
@@ -123,3 +143,44 @@ def replicator_step(O: PCMorphism, x: Array) -> Array:
     """One Phiconf Euler step of the closed system from state ``x``."""
     _, _, new_x = O.with_state(x).run_one(_IN_POS, lambda _o: _IN_DIR)
     return new_x
+
+
+def log_shahshahani(dim: int, dt: float = 1.0) -> ReactiveVectorSpace:
+    """The pushforward of ``shahshahani`` along ``y = log x`` (module docstring):
+    ``sharpR^log_y = dt * (diag(1/x) - 1 1^T)``, ``x = e^y``. Symmetric,
+    state-dependent, PSD on the simplex."""
+
+    def sharp_fn(y: Array) -> Array:
+        x = jnp.exp(y)
+        return dt * (jnp.diag(1.0 / x) - jnp.ones((dim, dim)))
+
+    return ReactiveVectorSpace(dim=dim, sharp_fn=sharp_fn)
+
+
+def log_replicator_arrangement(A: Array, dt: float = 1.0) -> SmoothArrangement:
+    """The sarr-scalar ``((R^n, sharpR^log), !, !, -(1/2) e^y^T A e^y) : I -> I``:
+    the replicator arrangement read through the chart ``y = log x``."""
+    A = jnp.asarray(A, dtype=float)
+    n = int(A.shape[0])
+    if A.shape != (n, n) or not bool(jnp.allclose(A, A.T)):
+        raise ValueError("log_replicator_arrangement: payoff matrix must be square and symmetric")
+
+    def U(q: Array, m_out: Array, n_in: Array) -> Array:
+        x = jnp.exp(q)
+        return -0.5 * jnp.dot(x, A @ x)
+
+    return SmoothArrangement(
+        Q=log_shahshahani(n, dt),
+        out_dim_M=0, in_dim_M=0, out_dim_N=0, in_dim_N=0,
+        out_f=lambda q, m_out: jnp.zeros(0),
+        in_f=lambda q, m_out, n_in: jnp.zeros(0),
+        U=U,
+        label="log_replicator",
+    )
+
+
+def log_replicator_dynamics(A: Array, dt: float = 1.0) -> PCMorphism:
+    """``Phiconf`` of the log-coordinate replicator arrangement. The state is
+    ``y = log x``; step it with ``replicator_step`` and read fractions off as
+    ``exp(y)``, which are positive by construction."""
+    return Phiconf(log_replicator_arrangement(A, dt))

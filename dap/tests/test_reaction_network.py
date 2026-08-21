@@ -28,6 +28,14 @@ The frontier under test (module docstring of reaction_network.py):
   non-symmetric (the certificate that nothing is being descended); the total
   potential emerges from compose_seq; boxes are local; conservation laws hold
   structurally.
+* COMPOSITIONAL, ARBITRARY Petri net IN LOG COORDINATES (doubled species boxes
+  + stateless transitions + prism wiring): one tick is the exact forward-Euler
+  mass-action step in log-concentration coordinates ``x * exp(dt (Z^T f)/x)``;
+  concentrations stay positive by construction at a ``dt`` where encoding 4
+  overshoots negative; it converges to mass action as ``dt -> 0``; ``y'`` is
+  frozen and irrelevant; the moiety trade-off is dual to encoding 4's
+  (conservation drifts, shrinking with ``dt``); the wire is a bijection and
+  the potential emerges from compose_seq.
 """
 
 import jax
@@ -49,6 +57,15 @@ from dap.reaction_network import (
     petri_extents,
     petri_incidences,
     petri_initial_state,
+    petri_log_arrangement,
+    petri_log_concentrations,
+    petri_log_dynamics,
+    petri_log_incidences,
+    petri_log_initial_state,
+    petri_log_species_box,
+    petri_log_transition_box,
+    petri_log_wire,
+    log_mass_action_step,
     petri_step,
     petri_transition_box,
     petri_wire,
@@ -475,3 +492,167 @@ def test_petri_malformed_nets_rejected():
         petri_arrangement(PETRI_M.at[0, 0].set(0.5), PETRI_N, PETRI_R, PETRI_X0)
     with pytest.raises(ValueError):  # negative rate constant
         petri_arrangement(PETRI_M, PETRI_N, PETRI_R.at[0].set(-1.0), PETRI_X0)
+
+
+# ---------------------------------------------------------------------------
+# (v) The log-coordinate Petri encoding (module docstring, 5).
+# ---------------------------------------------------------------------------
+
+PETRI_LOG_STEP = log_mass_action_step  # alias for readability below
+
+
+def test_petri_log_one_step_exact():
+    """Keystone: one Phiconf tick = x * exp(dt * (Z^T f)(x) / x), from moving states."""
+    for dt in (1.0, 0.05, 0.001):
+        O = petri_log_dynamics(PETRI_M, PETRI_N, PETRI_R, dt)
+        ref = PETRI_LOG_STEP(PETRI_M, PETRI_N, PETRI_R, dt)
+        s = petri_log_initial_state(PETRI_X0)
+        for _ in range(6):
+            x = petri_log_concentrations(s)
+            s = petri_step(O, s)
+            np.testing.assert_allclose(
+                np.asarray(petri_log_concentrations(s)),
+                np.asarray(ref(x)),
+                rtol=1e-6,
+            )
+
+
+def test_petri_log_positive_where_euler_overshoots():
+    """Stiff decay A -> 0 at rate 3, dt = 0.5: plain forward Euler leaves the
+    positive orthant on the FIRST step (x(1 - 3 dt) < 0); the log tick is
+    x e^{-3 dt}: positive, finite, and monotone to the equilibrium, at any dt."""
+    m1, n1 = jnp.array([[1.0]]), jnp.array([[0.0]])
+    r1, x01 = jnp.array([3.0]), jnp.array([1.0])
+    dt = 0.5
+    euler = x01 + dt * mass_action_rhs(m1, n1, r1, jnp.zeros(1))(x01)
+    assert bool(jnp.any(euler < 0))  # encoding 4's chemical reading fails here
+    O = petri_log_dynamics(m1, n1, r1, dt)
+    s = petri_log_initial_state(x01)
+    prev = float(x01[0])
+    for _ in range(100):
+        s = petri_step(O, s)
+        x = float(petri_log_concentrations(s)[0])
+        assert jnp.isfinite(x) and 0 < x < prev
+        prev = x
+    np.testing.assert_allclose(prev, 0.0, atol=1e-6)
+
+
+def test_petri_log_positivity_is_not_stability():
+    """The honesty frontier: on the 4-species net at dt = 1 the log encoding
+    does NOT rescue the integration -- each tick is positive, but the exponent
+    (Z^T f)/x grows without bound and the iteration blows up (in floats,
+    overflowing to inf and underflowing to 0). Positivity by construction
+    removes only the orthant-exit failure mode; dt must still be small for
+    stability and accuracy."""
+    dt = 1.0
+    assert bool(jnp.any(PETRI_X0 + dt * PETRI_RHS(PETRI_X0) < 0))
+    O = petri_log_dynamics(PETRI_M, PETRI_N, PETRI_R, dt)
+    s = petri_log_initial_state(PETRI_X0)
+    for _ in range(20):
+        s = petri_step(O, s)
+    x = petri_log_concentrations(s)
+    assert not bool(jnp.all(jnp.isfinite(jnp.log(x))))  # degenerate: 0 or inf
+
+
+def test_petri_log_converges_to_mass_action():
+    """Over a fixed horizon the log-Euler trajectory converges to the
+    mass-action flow as dt -> 0 (first-order scheme: error shrinks with dt)."""
+    horizon = 0.3
+    x_ref = PETRI_X0
+    dt_ref = 5e-4
+    for _ in range(int(round(horizon / dt_ref))):
+        x_ref = x_ref + dt_ref * PETRI_RHS(x_ref)
+
+    errs = {}
+    for dt in (0.05, 0.01):
+        O = petri_log_dynamics(PETRI_M, PETRI_N, PETRI_R, dt)
+        s = petri_log_initial_state(PETRI_X0)
+        for _ in range(int(round(horizon / dt))):
+            s = petri_step(O, s)
+        errs[dt] = float(jnp.max(jnp.abs(petri_log_concentrations(s) - x_ref)))
+    assert errs[0.01] < errs[0.05]
+    assert errs[0.01] < 0.05
+
+
+def test_petri_log_yprime_frozen_and_irrelevant():
+    """y' never moves and its value never reaches the y-dynamics: dV/dy' is
+    y'-free, and the exp Jacobian only feeds the discarded xi-slot."""
+    dt = 0.01
+    O = petri_log_dynamics(PETRI_M, PETRI_N, PETRI_R, dt)
+    s1 = petri_log_initial_state(PETRI_X0, y_prime=1.0)
+    s2 = petri_log_initial_state(PETRI_X0, y_prime=-3.7)
+    for _ in range(50):
+        s1, s2 = petri_step(O, s1), petri_step(O, s2)
+    np.testing.assert_array_equal(np.asarray(s1[1::2]), np.full(4, 1.0))
+    np.testing.assert_array_equal(np.asarray(s2[1::2]), np.full(4, -3.7))
+    np.testing.assert_array_equal(np.asarray(s1[0::2]), np.asarray(s2[0::2]))
+
+
+def test_petri_log_conservation_drift_is_dual_to_extent_encoding():
+    """The trade-off, measured: encoding 4 conserves c . x structurally
+    (test_petri_moiety_conservation_is_structural); here c . x drifts, and
+    the drift shrinks as dt -> 0 over a fixed horizon."""
+    Z = PETRI_N - PETRI_M
+    c = jnp.array([0.5, 1.5, 2.0, 1.0])
+    np.testing.assert_allclose(np.asarray(Z @ c), np.zeros(PETRI_T), atol=1e-12)
+    horizon = 1.0
+    drift = {}
+    for dt in (0.2, 0.02):
+        O = petri_log_dynamics(PETRI_M, PETRI_N, PETRI_R, dt)
+        s = petri_log_initial_state(PETRI_X0)
+        for _ in range(int(round(horizon / dt))):
+            s = petri_step(O, s)
+        x = petri_log_concentrations(s)
+        drift[dt] = abs(float(jnp.dot(c, x)) - float(jnp.dot(c, PETRI_X0)))
+    assert drift[0.2] > 1e-6  # it genuinely drifts (no structural conservation)
+    assert drift[0.02] < drift[0.2]
+
+
+def test_petri_log_potential_emerges_from_composition():
+    """The total potential -sum_t f_t(x) sum_s zeta_ts y'_s / x_s is assembled
+    by compose_seq; each transition box knows only its own arc data and rate."""
+    arr = petri_log_arrangement(PETRI_M, PETRI_N, PETRI_R, dt=0.1)
+    Z = PETRI_N - PETRI_M
+    rng = np.random.default_rng(7)
+    for _ in range(5):
+        y = jnp.asarray(rng.uniform(-0.5, 0.5, size=4))
+        yp = jnp.asarray(rng.uniform(-1.0, 1.0, size=4))
+        s = jnp.stack([y, yp], axis=1).reshape(-1)
+        x = jnp.exp(y)
+        expected = -jnp.sum(_petri_fluxes(x) * (Z @ (yp / x)))
+        got = arr.U(s, jnp.zeros(0), jnp.zeros(0))
+        np.testing.assert_allclose(float(got), float(expected), rtol=1e-6)
+
+
+def test_petri_log_wire_is_prism_and_boxes_are_local():
+    """The wire is a port bijection; species boxes carry no reaction data
+    (not even x0); transitions are stateless; the composite sharp is the
+    species' block-diagonal nilpotent."""
+    degrees, perm = petri_log_incidences(PETRI_M, PETRI_N)
+    assert degrees == [3, 3, 4, 3]
+    assert sorted(perm) == list(range(2 * sum(degrees)))  # bijection
+    wire = petri_log_wire(PETRI_M, PETRI_N)
+    assert (wire.out_dim_M, wire.in_dim_M) == (2 * sum(degrees), 2 * sum(degrees))
+    assert wire.Q.dim == 0
+
+    sp = petri_log_species_box(degree=3, dt=0.1)
+    assert (sp.in_dim_N, sp.out_dim_N) == (0, 6)
+    assert sp.Q.dim == 2  # (y, y'), and nothing else -- no rates, no x0
+    tr = petri_log_transition_box(jnp.array([1.0, 1.0]), jnp.array([-1.0, 1.0]), 0.5)
+    assert tr.Q.dim == 0  # stateless
+
+    arr = petri_log_arrangement(PETRI_M, PETRI_N, PETRI_R, dt=0.1)
+    assert arr.Q.dim == 8  # 2 per species; transitions contribute none
+    S = arr.Q.sharp_at(petri_log_initial_state(PETRI_X0))
+    np.testing.assert_allclose(np.asarray(S @ S), np.zeros_like(np.asarray(S)), atol=0)
+
+
+def test_petri_log_x0_validation():
+    """The chart is y = log x: zero or negative initial concentrations are
+    rejected here, and petri_check rejects negative x0 in encoding 4 too."""
+    with pytest.raises(ValueError):
+        petri_log_initial_state(jnp.array([1.0, 0.0, 1.0, 1.0]))
+    with pytest.raises(ValueError):
+        petri_log_initial_state(jnp.array([1.0, -0.5, 1.0, 1.0]))
+    with pytest.raises(ValueError):
+        petri_arrangement(PETRI_M, PETRI_N, PETRI_R, PETRI_X0.at[0].set(-1.0))

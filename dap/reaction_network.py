@@ -162,13 +162,53 @@ THE VERIFIED FRONTIER.
    rounding accumulating in ``x`` (Euler stepped on ``x`` preserves such laws
    in exact arithmetic too, but drifts by accumulated float error).
 
+5. COMPOSITIONAL, ARBITRARY Petri net IN LOG COORDINATES: positivity by
+   construction. Dual to 4: the state moves into doubled SPECIES boxes and the
+   transitions become stateless. Species ``s`` is a box ``<R^0|R^0> ->
+   <R^0 | R^{2 deg(s)}>`` with the transistor pair
+
+       (R^2, sharpR),   sharpR(xi, xi') = (dt * xi', 0),
+
+   holding ``(y_s, y'_s)``, broadcasting the pair ``(x_s, y'_s)``,
+   ``x_s = exp(y_s)``, to each incident transition; transition ``t`` is a
+   STATELESS box receiving those pairs at the species it touches, with
+
+       V_t = -f_t(x) * sum_s zeta_ts * y'_s / x_s,   zeta = n - m;
+
+   the wiring is an honest prism (a port bijection -- no affine map, and
+   ``x0`` is genuinely the initial state rather than wiring data). Since
+   ``dV_t/dy'_s = -zeta_ts f_t(x)/x_s`` is ``y'``-free, and the exp Jacobian
+   of the readout lands only in the discarded ``xi``-slot, one ``Phiconf``
+   tick is EXACTLY
+
+       y_s -> y_s + dt * sum_t zeta_ts f_t(x)/x_s,
+
+   the forward-Euler step of mass action written in log-concentration
+   coordinates ``y = log x`` (equivalently ``x_s -> x_s * exp(dt *
+   (Z^T f)_s / x_s)``, a multiplicative Euler step). Concentrations are
+   POSITIVE BY CONSTRUCTION at every tick and any ``dt``, where encoding 4
+   can overshoot negative; the price is exactly dual: 4 preserves every
+   moiety conservation law structurally and positivity only approximately,
+   5 preserves positivity structurally and conservation laws only
+   approximately (``O(dt^2)`` drift per tick). ``y'_s`` is frozen and its
+   value never matters, as in 4. POSITIVITY IS NOT STABILITY: near the
+   orthant boundary the exponent ``(Z^T f)_s/x_s`` is unbounded, so at large
+   ``dt`` the iteration can still blow up (in floats, overflowing to
+   ``inf``/``0``); what the construction removes is only the orthant-exit
+   failure mode, and ``dt`` must still be small for stability and accuracy.
+   The clean win is stiff pure decay (``A -> 0`` fast): Euler exits the
+   orthant at ``dt > 1/rate`` while the log tick ``x e^{-rate dt}`` is
+   positive, monotone, and stable at every ``dt``.
+
 In short: detailed-balanced mass-action = ``Phiconf`` with an Onsager
 (symmetric-PSD, free-energy-descending) structure, monolithically, exactly;
 compositionally with SPECIES boxes exactly the unimolecular ones, the first
 bimolecular reaction already unwireable because the cross-species Onsager
 coupling ``zeta_r zeta_r^T`` cannot arise from a direct-sum sharp; and
 compositionally with doubled TRANSITION boxes every Petri net, exactly, at the
-price of a nilpotent sharp and a potential that is not an energy.
+price of a nilpotent sharp and a potential that is not an energy -- or with
+doubled SPECIES boxes in log coordinates, exactly Euler-in-log, positive by
+construction, trading structural conservation for structural positivity.
 """
 
 from __future__ import annotations
@@ -585,6 +625,8 @@ def petri_check(m: Array, n: Array, r: Array, x0: Array) -> Tuple[Array, Array, 
         raise ValueError("petri_check: arc multiplicities must be integers")
     if not bool(jnp.all(r >= 0)):
         raise ValueError("petri_check: rate constants must be nonnegative")
+    if not bool(jnp.all(x0 >= 0)):
+        raise ValueError("petri_check: initial concentrations must be nonnegative")
     return m, n, r, x0
 
 
@@ -725,3 +767,214 @@ def petri_step(O: PCMorphism, state: Array) -> Array:
     """One ``Phiconf`` tick of a closed Petri-net coalgebra."""
     _, _, new_state = O.with_state(state).run_one(_IN_POS, lambda _o: _IN_DIR)
     return new_state
+
+
+# ---------------------------------------------------------------------------
+# 5. Arbitrary Petri nets in log coordinates: doubled species boxes,
+#    stateless transitions, prism wiring; positive by construction
+#    (module docstring, 5).
+# ---------------------------------------------------------------------------
+
+
+def petri_log_incidences(m: Array, n: Array) -> Tuple[List[int], List[int]]:
+    """Species degrees and the routing bijection for the log encoding.
+
+    Species ``s`` gets one PAIR of out-ports ``(x_s, y'_s)`` per transition it
+    takes part in (out-ports species-major, ``x`` before ``y'``); transition
+    ``t`` expects its touched species' pairs in ``petri_incidences`` order
+    (in-ports transition-major). ``perm`` satisfies
+    ``in_f(m_out)[p] = m_out[perm[p]]`` and is a bijection: the wire is a
+    prism, unlike the affine ``petri_wire``.
+    """
+    St = petri_incidences(m, n)
+    T, S = jnp.asarray(m).shape
+
+    out_port: Dict[Tuple[int, int], int] = {}
+    degrees: List[int] = []
+    idx = 0
+    for s in range(int(S)):
+        deg = 0
+        for t in range(int(T)):
+            if s in St[t]:
+                out_port[(s, t)] = idx
+                idx += 2
+                deg += 1
+        degrees.append(deg)
+
+    perm: List[int] = []
+    for t in range(int(T)):
+        for s in St[t]:
+            perm.append(out_port[(s, t)])
+            perm.append(out_port[(s, t)] + 1)
+    return degrees, perm
+
+
+def petri_log_species_box(degree: int, dt: float = 1.0) -> SmoothArrangement:
+    """The doubled species box ``<R^0|R^0> -> <R^0 | R^{2 degree}>``.
+
+    Parameter ``(R^2, sharpR)`` with the transistor sharp ``(xi, xi') |->
+    (dt * xi', 0)``, state ``(y_s, y'_s)``; readout the pair ``(x_s, y'_s)``,
+    ``x_s = exp(y_s)``, broadcast to the ``degree`` incident transitions; no
+    inputs, no potential. The exp Jacobian of the readout pulls incoming
+    ``x``-port covectors back into the ``xi``-slot, which the sharp discards;
+    the ``y'``-port covectors land untouched in the ``xi'``-slot, which drives
+    ``y_s``. The box carries NO reaction data -- not even its own initial
+    concentration, which is the initial state, not a structural constant.
+    """
+
+    def out_f(q: Array, m_out: Array) -> Array:
+        return jnp.tile(jnp.stack([jnp.exp(q[0]), q[1]]), degree)
+
+    def in_f(q: Array, m_out: Array, n_in: Array) -> Array:
+        return jnp.zeros(0)
+
+    def U(q: Array, m_out: Array, n_in: Array) -> Array:
+        return jnp.array(0.0)
+
+    return SmoothArrangement(
+        Q=constant(dt * _TRANSISTOR_SHARP),
+        out_dim_M=0, in_dim_M=0,
+        out_dim_N=2 * degree, in_dim_N=0,
+        out_f=out_f, in_f=in_f, U=U,
+        label=f"LogSp(deg={degree})",
+    )
+
+
+def petri_log_transition_box(
+    m_local: Array, zeta_local: Array, r_t: float
+) -> SmoothArrangement:
+    """The STATELESS transition box ``<R^0|R^0> -> <R^0 | R^{2k}>``-dual,
+    ``k = len(m_local)``: trivial parameter, in-ports the pairs
+    ``(x_s, y'_s)`` at the ``k`` species it touches, potential
+
+        V_t = -f_t(x) * sum_s zeta_local_s * y'_s / x_s,
+        f_t(x) = r_t * prod_s x_s^{m_local_s}.
+
+    ``dV_t/dy'_s = -zeta_local_s f_t(x)/x_s`` is the (signed, per-species)
+    log-rate itself, independent of ``y'``; all ``x``-derivatives flow to
+    discarded slots. Unlike ``petri_transition_box``, the box carries its
+    PRODUCT multiplicities too (inside ``zeta_local``), since delivery no
+    longer routes through affine wiring.
+    """
+    m_local = jnp.asarray(m_local, float)
+    zeta_local = jnp.asarray(zeta_local, float)
+    r_t = float(r_t)
+    if r_t < 0:
+        raise ValueError("petri_log_transition_box: rate constant must be nonnegative")
+    k = int(m_local.shape[0])
+
+    def out_f(q: Array, m_out: Array) -> Array:
+        return jnp.zeros(0)
+
+    def in_f(q: Array, m_out: Array, n_in: Array) -> Array:
+        return jnp.zeros(0)
+
+    def U(q: Array, m_out: Array, n_in: Array) -> Array:
+        x, yp = n_in[0::2], n_in[1::2]
+        f = r_t * jnp.prod(x ** m_local)
+        return -f * jnp.sum(zeta_local * yp / x)
+
+    return SmoothArrangement(
+        Q=trivial(),
+        out_dim_M=0, in_dim_M=0,
+        out_dim_N=0, in_dim_N=2 * k,
+        out_f=out_f, in_f=in_f, U=U,
+        label=f"LogTrans(r={r_t:g})",
+    )
+
+
+def petri_log_wire(m: Array, n: Array) -> SmoothArrangement:
+    """The routing prism: a port BIJECTION, cf. ``unimolecular_wire``.
+
+    No affine map and no ``x0``: species compute their own concentrations,
+    so the wire merely routes each species' broadcast ``(x_s, y'_s)`` pair to
+    the transitions touching it.
+    """
+    _, perm = petri_log_incidences(m, n)
+    perm_arr = jnp.asarray(perm, dtype=int)
+    P = int(perm_arr.shape[0])
+
+    def out_f(q_wire: Array, m_out: Array) -> Array:
+        return jnp.zeros(0)
+
+    def in_f(q_wire: Array, m_out: Array, n_in: Array) -> Array:
+        return m_out[perm_arr]
+
+    def U(q_wire: Array, m_out: Array, n_in: Array) -> Array:
+        return jnp.array(0.0)
+
+    return SmoothArrangement(
+        Q=trivial(),
+        out_dim_M=P, in_dim_M=P,
+        out_dim_N=0, in_dim_N=0,
+        out_f=out_f, in_f=in_f, U=U,
+        label=f"log_wire(P={P})",
+    )
+
+
+def petri_log_arrangement(m: Array, n: Array, r: Array, dt: float = 1.0) -> SmoothArrangement:
+    """The closed log-coordinate Petri net, by genuine composition in ``sarr``:
+
+        compose_seq( tensor(LogSp_s for s in S, LogTrans_t for t in T),
+                     petri_log_wire(m, n) )  :  <R^0|R^0> -> <R^0|R^0>,
+
+    with parameter ``R^{2S}`` holding ``(y_s, y'_s)_s`` (the stateless
+    transition boxes contribute nothing) and block-diagonal nilpotent sharp.
+    The total potential ``-sum_t f_t(x) sum_s zeta_ts y'_s/x_s`` emerges from
+    ``compose_seq``'s writer addition. Note ``x0`` is NOT an argument: initial
+    concentrations enter through ``petri_log_initial_state``.
+    """
+    m, n, r, _ = petri_check(m, n, r, jnp.zeros(jnp.asarray(m).shape[1]))
+    Z = n - m
+    St = petri_incidences(m, n)
+    degrees, _ = petri_log_incidences(m, n)
+    boxes = [petri_log_species_box(degrees[s], dt) for s in range(int(m.shape[1]))] + [
+        petri_log_transition_box(
+            m[t, jnp.asarray(St[t], dtype=int)],
+            Z[t, jnp.asarray(St[t], dtype=int)],
+            float(r[t]),
+        )
+        for t in range(int(m.shape[0]))
+    ]
+    wired = compose_seq(tensor_arrangements(boxes), petri_log_wire(m, n))
+    return replace(wired, label=f"petri_log(S={int(m.shape[1])}, T={int(m.shape[0])})")
+
+
+def petri_log_dynamics(m: Array, n: Array, r: Array, dt: float = 1.0) -> PCMorphism:
+    """``Phiconf`` of the log-coordinate Petri-net arrangement."""
+    return Phiconf(petri_log_arrangement(m, n, r, dt))
+
+
+def petri_log_initial_state(x0: Array, y_prime: float = 1.0) -> Array:
+    """The state ``(y_s, y'_s)_s = (log x0_s, y_prime)_s`` at time zero.
+
+    Requires ``x0 > 0`` strictly: the chart is ``y = log x``.  ``y_prime`` is
+    arbitrary and never changes, as in ``petri_initial_state``.
+    """
+    x0 = jnp.asarray(x0, float)
+    if not bool(jnp.all(x0 > 0)):
+        raise ValueError("petri_log_initial_state: initial concentrations must be strictly positive")
+    return jnp.stack(
+        [jnp.log(x0), jnp.full(x0.shape[0], float(y_prime))], axis=1
+    ).reshape(-1)
+
+
+def petri_log_concentrations(state: Array) -> Array:
+    """``x = exp(y)`` read off a log-Petri state (its even coordinates)."""
+    return jnp.exp(jnp.asarray(state)[0::2])
+
+
+def log_mass_action_step(
+    m: Array, n: Array, r: Array, dt: float = 1.0
+) -> Callable[[Array], Array]:
+    """Ground truth for the tests: ``x |-> x * exp(dt * (Z^T f)(x) / x)``,
+    the forward-Euler step of mass action in log coordinates."""
+    m = jnp.asarray(m, float)
+    Z = jnp.asarray(n, float) - m
+    r = jnp.asarray(r, float)
+
+    def step(x: Array) -> Array:
+        f = r * jnp.prod(x[None, :] ** m, axis=1)
+        return x * jnp.exp(dt * (Z.T @ f) / x)
+
+    return step
