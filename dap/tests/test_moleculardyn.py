@@ -260,3 +260,41 @@ def test_conf_relaxes_pair_to_lj_minimum():
         assert err[-1] < 1e-8                                # settled at 2^(1/6) sigma
         Us = np.array([float(arr.U(s, jnp.zeros(0), jnp.zeros(0))) for s in states])
         assert np.all(np.diff(Us) <= 1e-15)                  # energy descends
+
+
+# ---------------------------------------------------------------------------
+# 7. The displayed case: particles in R^3.
+# ---------------------------------------------------------------------------
+
+
+def test_three_dimensional_instance():
+    """The paper displays particles with parameter ``R^3``; ``dim`` is a slot of
+    the construction, so the same two claims hold there. Asserted: the emergent
+    potential of a 3-D trimer is the hand-summed LJ energy, and under the
+    configuration dynamics a 3-D pair released off-axis settles at separation
+    exactly ``2^(1/6) sigma`` along the line joining it."""
+    from dap.functors import Phiconf
+
+    pairs = [(0, 1), (0, 2), (1, 2)]
+    arr = md_arrangement(3, pairs, MASS, EPS, SIGMA, DT, dim=3)
+    assert arr.Q.dim == 9  # three 3-D positions; LJ boxes are stateless
+    rng = np.random.default_rng(0)
+    for _ in range(5):
+        pts = R0 * (np.eye(3) + 0.1 * rng.standard_normal((3, 3)))
+        got = float(arr.U(jnp.asarray(pts.reshape(-1)), jnp.zeros(0), jnp.zeros(0)))
+        want = sum(
+            _lj_energy_hand(float(np.linalg.norm(pts[i] - pts[j]))) for i, j in pairs
+        )
+        np.testing.assert_allclose(got, want, rtol=1e-12)
+
+    axis = np.ones(3) / np.sqrt(3.0)  # off-axis, so all three coordinates move
+    pair = md_arrangement(2, [(0, 1)], MASS, EPS, SIGMA, DT, dim=3)
+    O = Phiconf(pair)
+    for r_start in (1.05 * R0, 0.97 * R0):
+        q0 = jnp.asarray(np.concatenate([np.zeros(3), r_start * axis]))
+        states = _run(O, q0, 12000)
+        seps = np.array([float(np.linalg.norm(np.asarray(s)[3:] - np.asarray(s)[:3]))
+                         for s in states])
+        err = np.abs(seps - R0)
+        assert np.all(np.diff(err) <= 1e-12)                 # monotone approach
+        assert err[-1] < 1e-8                                # settled at 2^(1/6) sigma
