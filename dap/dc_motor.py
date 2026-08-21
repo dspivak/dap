@@ -487,3 +487,67 @@ def bateman_motor(
         return jnp.array([z[1], z[3]])
 
     return arr, embed, project
+
+
+# ---------------------------------------------------------------------------
+# Flow-coordinate variant (the paper's ex.further_reach "DC motor" item): the
+# same motor with states (i, omega) instead of the momenta (phi, p) -- the
+# constant rescaling phi = L i, p = J omega -- so its cells match the LC
+# item's convention (state = the reported flow, sharp = +-dt/mass).
+# ---------------------------------------------------------------------------
+
+
+def electrical_flow_cell(R: float, L: float, V: float = 0.0, dt: float = 0.01) -> SmoothArrangement:
+    """State ``i`` (the current), sharp ``+dt/L``, potential ``(R/2) i^2 - V i``,
+    reporting ``i``."""
+    return SmoothArrangement(
+        Q=constant(jnp.array([[dt / L]])),
+        out_dim_M=0,
+        in_dim_M=0,
+        out_dim_N=1,
+        in_dim_N=0,
+        out_f=lambda q, m_out: q,
+        in_f=lambda q, m_out, n_in: jnp.zeros(0),
+        U=lambda q, m_out, n_in: (R / 2.0) * q[0] ** 2 - V * q[0],
+        label=f"armature-flow(R={R:g},L={L:g},V={V:g})",
+    )
+
+
+def mechanical_flow_cell(b: float, J: float, tau: float = 0.0, dt: float = 0.01) -> SmoothArrangement:
+    """State ``omega`` (the angular velocity), oppositely-signed sharp
+    ``-dt/J``, NEGATED potential ``-((b/2) omega^2 + tau*omega)`` (the
+    ``(sharp, U) -> (-sharp, -U)`` invariance keeps friction dissipative),
+    reporting ``omega``."""
+    return SmoothArrangement(
+        Q=constant(jnp.array([[-dt / J]])),
+        out_dim_M=0,
+        in_dim_M=0,
+        out_dim_N=1,
+        in_dim_N=0,
+        out_f=lambda q, m_out: q,
+        in_f=lambda q, m_out, n_in: jnp.zeros(0),
+        U=lambda q, m_out, n_in: -((b / 2.0) * q[0] ** 2 + tau * q[0]),
+        label=f"rotor-flow(b={b:g},J={J:g},tau={tau:g})",
+    )
+
+
+def dc_motor_flow(
+    R: float,
+    L: float,
+    K: float,
+    J: float,
+    b: float,
+    V: float = 0.0,
+    tau: float = 0.0,
+    dt: float = 0.01,
+) -> SmoothArrangement:
+    """``compose_seq( electrical_flow_cell (x) mechanical_flow_cell, gyrator )``:
+    one Phiconf tick is exactly the Euler step
+
+        i     -> i     + dt (V - R i - K omega) / L,
+        omega -> omega + dt (K i - b omega - tau) / J.
+    """
+    cells = tensor_arrangements(
+        [electrical_flow_cell(R, L, V, dt), mechanical_flow_cell(b, J, tau, dt)]
+    )
+    return compose_seq(cells, gyrator(K))

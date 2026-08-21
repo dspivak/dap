@@ -442,3 +442,31 @@ def test_stall_current_and_stall_torque():
         xi_Q, _, _ = direction_action(jnp.zeros(0), trivial_omega(0), jnp.zeros(0), jnp.zeros(0))
         stall_torque = J * float(xi_Q[1])  # the unlocked sharp -dt*J would step p by dt*this
         np.testing.assert_allclose(stall_torque, K * V / R, rtol=0, atol=1e-11)
+
+
+# ---------------------------------------------------------------------------
+# Flow-coordinate variant (the paper's ex.further_reach "DC motor" item).
+# ---------------------------------------------------------------------------
+
+
+def test_flow_variant_one_tick_is_euler_in_i_omega():
+    """The (i, omega)-state encoding steps EXACTLY by
+
+        i     -> i     + dt (V - R i - K omega) / L,
+        omega -> omega + dt (K i - b omega - tau) / J,
+
+    i.e. the momentum encoding's Euler step conjugated by the constant
+    rescaling phi = L i, p = J omega -- same motor, LC-item convention."""
+    from dap.dc_motor import dc_motor_flow
+
+    Rr, L, K, J, b, V, tau, dt = 1.3, 0.7, 0.9, 2.1, 0.4, 5.0, 0.6, 0.01
+    O = Phiconf(dc_motor_flow(Rr, L, K, J, b, V, tau, dt))
+    rng = np.random.default_rng(5)
+    for _ in range(5):
+        i0, w0 = rng.standard_normal(2)
+        state = jnp.array([i0, w0])
+        *_, state = O.with_state(state).run_one(_IN_POS, _TRIV)
+        expect = np.array(
+            [i0 + dt * (V - Rr * i0 - K * w0) / L, w0 + dt * (K * i0 - b * w0 - tau) / J]
+        )
+        np.testing.assert_allclose(np.asarray(state), expect, atol=1e-13)

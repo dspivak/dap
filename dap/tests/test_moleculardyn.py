@@ -233,3 +233,30 @@ def test_trimer_energy_bounded_and_beats_phase():
     # honesty check: Phiphase is also symplectic -- ITS band is flat too;
     # the win is bandwidth (2nd order vs 1st), not "drift vs no drift"
     assert phase_late <= 2.0 * phase_early
+
+
+# ---------------------------------------------------------------------------
+# 6. Phiconf: energy minimization (structure relaxation) to the LJ minimum.
+# ---------------------------------------------------------------------------
+
+
+def test_conf_relaxes_pair_to_lj_minimum():
+    """Under the configuration dynamics the particles descend the emergent
+    total potential -- the energy-minimization ("structure relaxation") mode of
+    an MD code -- so a pair released near the LJ minimum settles at separation
+    exactly ``2^(1/6) sigma``. Asserted: from 1.05 R0 and from 0.97 R0 the
+    separation converges monotonically to R0 (tolerance 1e-8 after 12000
+    ticks; the conf step is the small ``dt^2/m``), and the emergent energy
+    decreases at every tick."""
+    from dap.functors import Phiconf
+
+    arr = md_arrangement(2, [(0, 1)], MASS, EPS, SIGMA, DT, dim=1)
+    O = Phiconf(arr)
+    for r_start in (1.05 * R0, 0.97 * R0):
+        states = _run(O, jnp.array([0.0, r_start]), 12000)
+        seps = np.array([float(s[1] - s[0]) for s in states])
+        err = np.abs(seps - R0)
+        assert np.all(np.diff(err) <= 1e-15)                 # monotone approach
+        assert err[-1] < 1e-8                                # settled at 2^(1/6) sigma
+        Us = np.array([float(arr.U(s, jnp.zeros(0), jnp.zeros(0))) for s in states])
+        assert np.all(np.diff(Us) <= 1e-15)                  # energy descends

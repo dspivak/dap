@@ -123,13 +123,52 @@ THE VERIFIED FRONTIER.
    s``), but that is a one-box arrangement -- monolithic in disguise; with two
    reactions sharing a species each extent box's sharp would need the other
    box's state, which ``direct_sum`` forbids, and the obstruction returns.
+   Item 4 occupies exactly this gap.
+
+4. COMPOSITIONAL, ARBITRARY Petri net (the paper's "Petri nets" item): put the
+   state in the TRANSITIONS, doubled, and the species in the WIRING. A Petri
+   net ``(S, T, m, n, r, x0)`` has arc multiplicities ``m, n : T x S -> N``,
+   rate constants ``r : T -> R_{>=0}`` and initial concentrations ``x0``; each
+   transition is one-way and fires at ``f_t(x) = r(t) prod_s x_s^{m_ts}`` (a
+   reversible reaction is two transitions). Transition ``t`` is a box
+   ``<R^{S_t}|R> `` whose parameter is ``logic.py``'s transistor pair
+
+       (R^2, sharpR),   sharpR(xi, xi') = (xi', 0),
+
+   holding ``(eps_t, eps'_t)``, reporting ``eps_t`` (the extent of reaction),
+   receiving the concentrations at the species ``S_t`` it touches, with
+
+       U_t((eps_t, eps'_t), x) = -eps'_t * f_t(x).
+
+   The species are the static wiring: an affine input map sending the reported
+   extents to ``x_s = x0_s + sum_t (n_ts - m_ts) eps_t`` (affine wiring has
+   precedent in ``amplifier.py``'s feedback stage). Since ``U`` is LINEAR in
+   ``eps'_t``, ``dU/deps'_t = -f_t(x)`` is the rate itself rather than a
+   derivative of it, and the nilpotent sharp delivers that to ``eps_t`` while
+   discarding ``dU/deps_t`` (the rate sensitivities, which are what a genuine
+   descent would follow). One ``Phiconf`` tick is then EXACTLY the forward-Euler
+   mass-action step, at any molecularity, irreversibly, with no detailed-balance
+   hypothesis; ``eps'_t`` never moves and its value never matters.
+
+   WHAT THIS DOES AND DOESN'T BUY. The sharp is nilpotent, not symmetric PSD,
+   and ``U_t`` is a rate, not an energy: nothing descends, so by the vacuity
+   guard above this realization certifies no thermodynamics. What it does have,
+   which the one-box vacuous realization does not, is LOCALITY: each box carries
+   only its own rate constant and arc multiplicities and sees only its own
+   species, and the total potential is assembled by ``compose_seq``. Moiety
+   conservation is also structural rather than numerical: the state IS the
+   extent vector and ``x`` is recomputed as ``x0 + Z^T eps`` at every tick, so
+   any ``c`` with ``Z c = 0`` has ``c . x = c . x0`` at every step without
+   rounding accumulating in ``x`` (Euler stepped on ``x`` preserves such laws
+   in exact arithmetic too, but drifts by accumulated float error).
 
 In short: detailed-balanced mass-action = ``Phiconf`` with an Onsager
 (symmetric-PSD, free-energy-descending) structure, monolithically, exactly;
-compositionally (species boxes + stateless reaction boxes) exactly the
-unimolecular ones; the first bimolecular reaction already cannot be wired,
-because wiring couples potentials only and the cross-species Onsager coupling
-``zeta_r zeta_r^T`` cannot arise from a direct-sum sharp.
+compositionally with SPECIES boxes exactly the unimolecular ones, the first
+bimolecular reaction already unwireable because the cross-species Onsager
+coupling ``zeta_r zeta_r^T`` cannot arise from a direct-sum sharp; and
+compositionally with doubled TRANSITION boxes every Petri net, exactly, at the
+price of a nilpotent sharp and a potential that is not an energy.
 """
 
 from __future__ import annotations
@@ -144,7 +183,7 @@ from .arrangement import SmoothArrangement
 from .functors import Phiconf
 from .interpretation import trivial_omega
 from .pc import PCMorphism
-from .rvect import ReactiveVectorSpace, diagonal, trivial
+from .rvect import ReactiveVectorSpace, constant, diagonal, trivial
 from .wiring import compose_seq, tensor_arrangements
 
 
@@ -517,3 +556,172 @@ def separability_ratio(
         return J[j, i] / J[i, j]
 
     return ratio
+
+
+# ---------------------------------------------------------------------------
+# 4. Arbitrary Petri nets: doubled transition boxes, species as wiring
+#    (module docstring, 4; the paper's "Petri nets" item).
+# ---------------------------------------------------------------------------
+
+
+# The transistor pair of logic.py: sharpR(xi, xi') = (xi', 0). Repeated here
+# rather than imported so that this module does not depend on an extension.
+_TRANSISTOR_SHARP = jnp.array([[0.0, 1.0], [0.0, 0.0]])
+
+
+def petri_check(m: Array, n: Array, r: Array, x0: Array) -> Tuple[Array, Array, Array, Array]:
+    """Validate a Petri net ``(m, n, r, x0)`` and return it as float arrays."""
+    m = jnp.asarray(m, float)
+    n = jnp.asarray(n, float)
+    r = jnp.asarray(r, float)
+    x0 = jnp.asarray(x0, float)
+    if m.shape != n.shape or m.ndim != 2:
+        raise ValueError("petri_check: m, n must be (T, S) of the same shape")
+    if r.shape != (m.shape[0],) or x0.shape != (m.shape[1],):
+        raise ValueError("petri_check: r must be (T,) and x0 must be (S,)")
+    if not bool(jnp.all(m >= 0) and jnp.all(n >= 0)):
+        raise ValueError("petri_check: arc multiplicities must be nonnegative")
+    if not bool(jnp.all(m == jnp.round(m)) and jnp.all(n == jnp.round(n))):
+        raise ValueError("petri_check: arc multiplicities must be integers")
+    if not bool(jnp.all(r >= 0)):
+        raise ValueError("petri_check: rate constants must be nonnegative")
+    return m, n, r, x0
+
+
+def petri_incidences(m: Array, n: Array) -> List[List[int]]:
+    """``S_t``, the species each transition touches (as reactant or product)."""
+    m, n = jnp.asarray(m, float), jnp.asarray(n, float)
+    return [
+        [s for s in range(m.shape[1]) if bool(m[t, s] > 0 or n[t, s] > 0)]
+        for t in range(m.shape[0])
+    ]
+
+
+def petri_transition_box(
+    m_local: Array, r_t: float, dt: float = 1.0, label: str = "Trans"
+) -> SmoothArrangement:
+    """The doubled transition box ``<R^0|R^0> -> <R^{S_t} | R>`` (module docstring, 4).
+
+    Parameter ``(R^2, sharpR)`` with the transistor sharp ``(xi, xi') |->
+    (dt * xi', 0)``, state ``(eps_t, eps'_t)``; readout the extent ``eps_t``;
+    inputs the concentrations at the ``len(m_local)`` species the transition
+    touches, in the order given by ``petri_incidences``; potential
+
+        U_t((eps_t, eps'_t), x_local) = -eps'_t * r_t * prod_s x_s^{m_local_s}.
+
+    ``m_local`` is the transition's REACTANT multiplicities at those species
+    (its product multiplicities live in the wiring, not here). ``dt`` rides on
+    the sharp, as in ``onsager_rvect``.
+    """
+    m_local = jnp.asarray(m_local, float)
+    r_t = float(r_t)
+    if r_t < 0:
+        raise ValueError("petri_transition_box: rate constant must be nonnegative")
+    k = int(m_local.shape[0])
+
+    def out_f(q: Array, m_out: Array) -> Array:
+        return q[:1]  # report the extent eps_t
+
+    def in_f(q: Array, m_out: Array, n_in: Array) -> Array:
+        return jnp.zeros(0)
+
+    def U(q: Array, m_out: Array, n_in: Array) -> Array:
+        return -q[1] * r_t * jnp.prod(n_in ** m_local)
+
+    return SmoothArrangement(
+        Q=constant(dt * _TRANSISTOR_SHARP),
+        out_dim_M=0, in_dim_M=0,
+        out_dim_N=1, in_dim_N=k,
+        out_f=out_f, in_f=in_f, U=U,
+        label=f"{label}(r={r_t:g})",
+    )
+
+
+def petri_wire(m: Array, n: Array, x0: Array) -> SmoothArrangement:
+    """The species wiring ``(x)_t <R^{S_t}|R> -> <R^0|R^0>`` (module docstring, 4).
+
+    Static (trivial parameter, ``U = 0``) but not a prism: its input map is the
+    AFFINE map carrying the transitions' reported extents to the concentrations
+
+        x_s = x0_s + sum_t (n_ts - m_ts) eps_t,
+
+    gathered to each transition's in-ports (cf. the feedback stage of
+    ``amplifier.py``, whose input map is likewise affine rather than a
+    permutation).
+    """
+    m, n, _, x0 = petri_check(m, n, jnp.zeros(jnp.asarray(m).shape[0]), x0)
+    Z = n - m
+    idx = jnp.asarray([s for St in petri_incidences(m, n) for s in St], dtype=int)
+
+    def out_f(q_wire: Array, m_out: Array) -> Array:
+        return jnp.zeros(0)
+
+    def in_f(q_wire: Array, m_out: Array, n_in: Array) -> Array:
+        return (x0 + Z.T @ m_out)[idx]  # m_out = the reported extents
+
+    def U(q_wire: Array, m_out: Array, n_in: Array) -> Array:
+        return jnp.array(0.0)
+
+    return SmoothArrangement(
+        Q=trivial(),
+        out_dim_M=int(Z.shape[0]), in_dim_M=int(idx.shape[0]),
+        out_dim_N=0, in_dim_N=0,
+        out_f=out_f, in_f=in_f, U=U,
+        label=f"species_wire(S={int(Z.shape[1])}, T={int(Z.shape[0])})",
+    )
+
+
+def petri_arrangement(
+    m: Array, n: Array, r: Array, x0: Array, dt: float = 1.0
+) -> SmoothArrangement:
+    """The closed Petri net, by genuine composition in ``sarr``:
+
+        compose_seq( tensor(Trans_t for t in T), petri_wire(m, n, x0) ),
+
+    a ``<R^0|R^0> -> <R^0|R^0>`` arrangement with parameter ``R^{2T}`` holding
+    ``(eps_t, eps'_t)_t`` and block-diagonal nilpotent sharp. The total
+    potential ``-sum_t eps'_t f_t(x)`` emerges from ``compose_seq``'s writer
+    addition; it is written nowhere by hand.
+    """
+    m, n, r, x0 = petri_check(m, n, r, x0)
+    St = petri_incidences(m, n)
+    boxes = [
+        petri_transition_box(m[t, jnp.asarray(St[t], dtype=int)], float(r[t]), dt)
+        for t in range(int(m.shape[0]))
+    ]
+    wired = compose_seq(tensor_arrangements(boxes), petri_wire(m, n, x0))
+    return replace(wired, label=f"petri(S={int(m.shape[1])}, T={int(m.shape[0])})")
+
+
+def petri_dynamics(
+    m: Array, n: Array, r: Array, x0: Array, dt: float = 1.0
+) -> PCMorphism:
+    """``Phiconf`` of the Petri-net arrangement."""
+    return Phiconf(petri_arrangement(m, n, r, x0, dt))
+
+
+def petri_initial_state(num_transitions: int, eps_prime: float = 1.0) -> Array:
+    """The state ``(eps_t, eps'_t)_t = (0, eps_prime)_t`` at time zero.
+
+    ``eps_prime`` is arbitrary and never changes: it only scales ``U``, whose
+    ``eps'``-derivative -- the only component the sharp reads -- is independent
+    of it.
+    """
+    return jnp.tile(jnp.array([0.0, float(eps_prime)]), num_transitions)
+
+
+def petri_extents(state: Array) -> Array:
+    """The extents ``(eps_t)_t`` of a Petri-net state (its even coordinates)."""
+    return jnp.asarray(state)[0::2]
+
+
+def petri_concentrations(m: Array, n: Array, x0: Array, state: Array) -> Array:
+    """``x = x0 + Z^T eps`` read off a Petri-net state."""
+    m, n = jnp.asarray(m, float), jnp.asarray(n, float)
+    return jnp.asarray(x0, float) + (n - m).T @ petri_extents(state)
+
+
+def petri_step(O: PCMorphism, state: Array) -> Array:
+    """One ``Phiconf`` tick of a closed Petri-net coalgebra."""
+    _, _, new_state = O.with_state(state).run_one(_IN_POS, lambda _o: _IN_DIR)
+    return new_state
