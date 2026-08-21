@@ -303,3 +303,113 @@ def test_coupled_pair_normal_modes():
         assert abs(T_meas - T_cont) / T_cont <= w * w / 12.0
         assert abs(T_meas - T_disc) / T_disc <= 1e-5
         assert np.max(np.abs(purity(qs))) <= 1e-12     # stays in the eigenmode
+
+
+# ---------------------------------------------------------------------------
+# 6. The two-box Phiconf encoding (ex.further_reach, "LC circuit" item).
+# ---------------------------------------------------------------------------
+
+from dap.lc_circuit import capacitor_cell, current_voltage_coupler, inductor_cell, lc_conf
+
+# The composite has one outer output port (the terminal voltage), unloaded.
+_DIR_CONF = lambda _out_pos: (jnp.zeros(1), jnp.zeros(0))
+
+
+def test_lc_conf_is_the_advertised_composite():
+    """The paper item's data emerge from genuine sarr composition: parameter
+    R^2 = (i, v); sharp diag(-1/L, +1/C) -- OPPOSITE signs; composite
+    potential i*v (not written by hand); outer output reporting v."""
+    L, C = 5.0, 20.0
+    arr = lc_conf(L, C)
+    assert arr.Q.dim == 2
+    assert (arr.out_dim_N, arr.in_dim_N) == (1, 0)
+    assert current_voltage_coupler().Q.dim == 0        # the coupler is stateless
+    np.testing.assert_allclose(
+        np.asarray(arr.Q.sharp_at(jnp.zeros(2))),
+        np.diag([-1.0 / L, 1.0 / C]),
+        atol=1e-14,
+    )
+    rng = np.random.default_rng(11)
+    for _ in range(5):
+        q = rng.standard_normal(2)
+        U = float(arr.U(jnp.asarray(q), jnp.zeros(0), jnp.zeros(0)))
+        np.testing.assert_allclose(U, q[0] * q[1], atol=1e-12)
+        v = np.asarray(arr.out_f(jnp.asarray(q), jnp.zeros(0)))
+        np.testing.assert_allclose(v, q[1:2], atol=1e-14)
+
+
+def test_lc_conf_one_tick_is_forward_euler():
+    """One Phiconf tick is EXACTLY  i -> i + v/L,  v -> v - i/C  (the
+    forward-Euler step of the inductor law di/dt = v/L and the capacitor law
+    dv/dt = -i/C), for random states and several (L, C)."""
+    rng = np.random.default_rng(3)
+    for L, C in [(5.0, 20.0), (2.0, 2.0), (30.0, 7.0)]:
+        O = Phiconf(lc_conf(L, C))
+        for _ in range(4):
+            iv = rng.standard_normal(2)
+            state = jnp.asarray(iv)
+            _, _, state = O.with_state(state).run_one(_IN_POS, _DIR_CONF)
+            expect = np.array([iv[0] + iv[1] / L, iv[1] - iv[0] / C])
+            np.testing.assert_allclose(np.asarray(state), expect, atol=1e-13)
+
+
+def test_lc_conf_energy_law_and_period():
+    """The lossless forward-Euler signature, exactly and in aggregate:
+
+    (a) the energy H = (L i^2 + C v^2)/2 grows by EXACTLY 1 + 1/(LC) per tick
+        (in scaled coordinates the map is sqrt(1 + omega^2) times a rotation,
+        omega = 1/sqrt(LC); cf. dap/dc_motor.py's lossless law);
+    (b) the rotation angle per tick is arctan(omega), so the measured period
+        is 2 pi / arctan(omega) ticks, within the continuum 2 pi sqrt(LC) up
+        to the forward-Euler period bias omega^2/3 (arctan(w) = w - w^3/3 + ...).
+    """
+    L, C = 20.0, 20.0                                  # omega = 0.05
+    w = 1.0 / np.sqrt(L * C)
+    O = Phiconf(lc_conf(L, C))
+    state = jnp.array([0.0, 1.0])
+    ivs = [np.asarray(state)]
+    for _ in range(400):
+        _, _, state = O.with_state(state).run_one(_IN_POS, _DIR_CONF)
+        ivs.append(np.asarray(state))
+    ivs = np.stack(ivs)
+    H = (L * ivs[:, 0] ** 2 + C * ivs[:, 1] ** 2) / 2.0
+
+    np.testing.assert_allclose(H[1:] / H[:-1], 1.0 + w**2, atol=1e-12)      # (a)
+
+    T = _measured_period(ivs[:, 1])
+    T_disc = 2.0 * np.pi / np.arctan(w)
+    T_cont = 2.0 * np.pi * np.sqrt(L * C)
+    np.testing.assert_allclose(T, T_disc, rtol=1e-4)                        # (b)
+    assert abs(T - T_cont) / T_cont < 0.5 * w**2                            # bias ~ w^2/3
+
+
+def test_lc_conf_picks_up_a_radio_signal():
+    """The circuit tunes: a sinusoidal covector fed at the terminal is an
+    antenna, and the steady-state response peaks at omega = 1/sqrt(LC).
+
+    The drive enters as ``xi_N(t) = sin(Omega t)`` at the single outer port;
+    its pullback along the report ``(i, v) |-> v`` lands in the ``v``-slot, so
+    the tick becomes ``v -> v - (i + xi_N)/C``: an injected current. A small
+    series resistance ``R`` (potential ``-(R/2) i^2`` in the negative-sharp
+    inductor cell) supplies the damping that makes the peak finite and the
+    transient die; it also swamps the forward-Euler energy growth
+    (``R/(2L) = 0.005 > omega^2/2 = 0.00125``), so the undriven map is stable.
+    Asserted: over a sweep of drive frequencies the largest steady-state
+    amplitude of ``v`` occurs exactly at ``Omega = omega``, and beats the
+    +-25% detunings by more than 2x (measured ~3x, Q = omega L / R = 5).
+    """
+    L, C, R = 20.0, 20.0, 0.2
+    w = 1.0 / np.sqrt(L * C)
+    O = Phiconf(lc_conf(L, C, R))
+    freqs = [0.6 * w, 0.8 * w, w, 1.25 * w, 1.6 * w]
+    amps = []
+    for W in freqs:
+        state = jnp.zeros(2)
+        vs = []
+        for t in range(2000):
+            drive = lambda _out_pos, t=t: (jnp.array([np.sin(W * t)]), jnp.zeros(0))
+            _, _, state = O.with_state(state).run_one(_IN_POS, drive)
+            vs.append(float(state[1]))
+        amps.append(float(np.max(np.abs(np.asarray(vs[1000:])))))
+    assert int(np.argmax(amps)) == freqs.index(w)
+    assert amps[freqs.index(w)] > 2.0 * max(amps[1], amps[3])

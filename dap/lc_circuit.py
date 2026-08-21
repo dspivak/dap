@@ -112,3 +112,90 @@ def coupled_lc_pair(L: float, C: float, C_c: float) -> SmoothArrangement:
     """
     cells = tensor_arrangements([lc_cell(L, C), lc_cell(L, C)])
     return compose_seq(cells, coupling_capacitor(C_c))
+
+
+# ---------------------------------------------------------------------------
+# The two-box Phiconf encoding (ex.further_reach, "LC circuit"): an inductor
+# cell and a capacitor cell with OPPOSITELY-SIGNED sharps, wired by a stateless
+# arrangement whose potential is the product i*v and which reports v.
+# ---------------------------------------------------------------------------
+
+
+def inductor_cell(L: float, R: float = 0.0) -> SmoothArrangement:
+    """The inductor as a Phiconf cell ``<R^0|R^0> -> <R^1_out | R^0_in>``.
+
+    Parameter ``i`` (the current through the inductor), constant scalar sharp
+    ``-1/L`` (NEGATIVE: a potential coupling has a symmetric cross-Hessian, so
+    producing a rotation forces the two cells' sharps to differ in sign -- the
+    Lotka-Volterra / DC-motor mechanism, cf. dap/dc_motor.py point 2),
+    reporting ``i`` on its single output port. An optional series resistance
+    ``R`` enters as the potential ``-(R/2) i^2`` -- NEGATED, because the cell's
+    sharp is negative (dap/dc_motor.py's mechanical-cell convention: the flow
+    ``-sharp(dU)`` is invariant under ``(sharp, U) -> (-sharp, -U)``); the
+    self-dynamics is then the damped ``i -> i + (v - R i)/L``.
+    """
+    return SmoothArrangement(
+        Q=diagonal(jnp.array([-1.0 / L])),
+        out_dim_M=0,
+        in_dim_M=0,
+        out_dim_N=1,
+        in_dim_N=0,
+        out_f=lambda q, m_out: q,
+        in_f=lambda q, m_out, n_in: jnp.zeros(0),
+        U=lambda q, m_out, n_in: -(R / 2.0) * q[0] ** 2,
+        label=f"ind(L={L:g},R={R:g})",
+    )
+
+
+def capacitor_cell(C: float) -> SmoothArrangement:
+    """The capacitor as a Phiconf cell ``<R^0|R^0> -> <R^1_out | R^0_in>``:
+    parameter ``v`` (the voltage across it), constant scalar sharp ``+1/C``,
+    zero potential, reporting ``v``. (Same convention as dap/logic.py's
+    ``node``: state = voltage, sharp = 1/C.)"""
+    return SmoothArrangement(
+        Q=diagonal(jnp.array([1.0 / C])),
+        out_dim_M=0,
+        in_dim_M=0,
+        out_dim_N=1,
+        in_dim_N=0,
+        out_f=lambda q, m_out: q,
+        in_f=lambda q, m_out, n_in: jnp.zeros(0),
+        U=lambda q, m_out, n_in: 0.0 * q[0],
+        label=f"cap(C={C:g})",
+    )
+
+
+def current_voltage_coupler() -> SmoothArrangement:
+    """The stateless arrangement ``f: <R^2_out|R^0> -> <R^1_out|R^0>`` of the
+    paper's LC-circuit item: potential ``W(i, v) = i * v`` read off the two
+    reports, output map ``(i, v) |-> v`` (the circuit's terminal voltage)."""
+    return SmoothArrangement(
+        Q=trivial(),
+        out_dim_M=2,
+        in_dim_M=0,
+        out_dim_N=1,
+        in_dim_N=0,
+        out_f=lambda q, m_out: m_out[1:2],
+        in_f=lambda q, m_out, n_in: jnp.zeros(0),
+        U=lambda q, m_out, n_in: m_out[0] * m_out[1],
+        label="iv",
+    )
+
+
+def lc_conf(L: float, C: float, R: float = 0.0) -> SmoothArrangement:
+    """``compose_seq( inductor_cell (x) capacitor_cell, current_voltage_coupler )``.
+
+    Parameter ``R^2 = (i, v)``, sharp ``diag(-1/L, +1/C)``, composite potential
+    ``i*v`` (emerging from composition, not written by hand). One Phiconf tick
+    is exactly the forward-Euler step of the LC equations
+
+        i -> i + v/L,        v -> v - i/C,
+
+    the discrete rotation-with-growth whose energy law is pinned in
+    tests/test_lc_circuit.py. With ``R > 0`` the ``i``-update gains the damping
+    ``-R i / L``, and a time-varying covector fed at the outer port (an
+    antenna: it enters the ``v``-update through the report's pullback) drives
+    a resonance peaked at ``omega = 1/sqrt(LC)`` -- the tuning of a radio.
+    """
+    cells = tensor_arrangements([inductor_cell(L, R), capacitor_cell(C)])
+    return compose_seq(cells, current_voltage_coupler())
